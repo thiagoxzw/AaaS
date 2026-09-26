@@ -1,6 +1,6 @@
 # 07 — Plano do MVP
 
-> Status: **proposta**, em revisão. Este documento transforma os documentos 01 a 06 numa sequência de
+> Status: **aceito** (2026-09-26). Este documento transforma os documentos 01 a 06 numa sequência de
 > entregas. Ele não repete as decisões; ele as referencia.
 
 ## 1. Regras do plano
@@ -245,7 +245,12 @@ A observabilidade é construída **junto** com cada capacidade, e não numa fati
 | 7 | Aprovações pedidas, aprovadas, rejeitadas e expiradas, e tempo até a decisão |
 | 9 | Dashboard consolidado do agente no Grafana |
 
-## 7. Decisões a tomar na fatia 0
+## 7. Decisões da fatia 0
+
+**Decididas (2026-09-26):** Maven como ferramenta de build; branch `main` criada a partir da documentação
+aceita; **um PR por fatia**, com destino à `main`.
+
+Contexto original das decisões:
 
 1. **Ferramenta de build: Maven ou Gradle?** Recomendo **Maven**: é o mais comum em vagas de backend Java,
    é declarativo e simples de explicar. O Gradle (Kotlin DSL) é mais flexível e mais rápido em builds

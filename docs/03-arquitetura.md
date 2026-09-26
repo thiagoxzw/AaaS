@@ -523,7 +523,7 @@ não depende de `integration`" (as ferramentas conhecem só o port; veja o docum
 04 — Modelo de dados                      ✔
 05 — Contratos das ferramentas            ✔
 06 — Threat model                         ✔
-07 — Plano do MVP                         ← em revisão
+07 — Plano do MVP                         ✔
      ↓
 Implementação incremental
 ```

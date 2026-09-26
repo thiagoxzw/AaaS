@@ -35,7 +35,7 @@ tentativas ficam registradas na auditoria.
 | [04 — Modelo de dados](docs/04-modelo-de-dados.md) | Tabelas, relacionamentos, invariantes garantidas pelo banco, índices e consultas de auditoria |
 | [05 — Contratos das ferramentas](docs/05-contratos-das-ferramentas.md) | Interface `Tool`, port `ContainerRuntime`, risco, erros, catálogo do MVP, testes e contrato da aprovação |
 | [06 — Threat model](docs/06-threat-model.md) | Ativos, agentes de ameaça, STRIDE por fronteira, suíte do "LLM malicioso", riscos residuais |
-| [07 — Plano do MVP](docs/07-plano-do-mvp.md) | Fatias verticais 0–9, critérios de aceite, testes por fatia e definição de pronto *(em revisão)* |
+| [07 — Plano do MVP](docs/07-plano-do-mvp.md) | Fatias verticais 0–9, critérios de aceite, testes por fatia e definição de pronto |
 | [ADRs](docs/adr/README.md) | Decisões arquiteturais registradas |
 | [CONTRIBUTING](CONTRIBUTING.md) | Convenções: idioma, commits, banco |
 
