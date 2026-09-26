@@ -1,6 +1,6 @@
 # 06 — Threat model
 
-> Status: **proposta**, em revisão. Escopo principal: o MVP (uma organização, Docker local). As ameaças
+> Status: **aceito** (2026-09-26). Escopo principal: o MVP (uma organização, Docker local). As ameaças
 > que só surgem em fases posteriores (multi-tenant, GitHub, dashboard) aparecem marcadas com a fase.
 
 ## 1. Método
@@ -88,7 +88,7 @@ Legenda da coluna **Ref**: RF/RNF = requisito (documento 02), ADR = decisão, Dx
 | TM-B1-01 | S | JWT forjado, adulterado ou com algoritmo trocado | O decoder é configurado com a chave e o algoritmo fixos. Tokens `alg=none` ou assinados com outra chave são rejeitados. Expiração curta. | RNF-SEG-08 | `api_rejectsTokenSignedWithOtherKey`, `api_rejectsUnsignedToken`, `api_rejectsExpiredToken` |
 | TM-B1-02 | S | Força bruta no login e enumeração de usuários | A mesma mensagem genérica para usuário inexistente e senha errada. Hash de custo alto. Limitação de tentativas em memória no MVP (distribuída com Redis na V5). | RNF-SEG-08, RNF-SEG-17 | `login_returnsSameErrorForUnknownUserAndWrongPassword`, `login_throttlesRepeatedFailures` |
 | TM-B1-03 | E | Um usuário desativado, ou que perdeu um papel, continua agindo com um JWT ainda válido | O status e os papéis do usuário são **recarregados do banco** a cada requisição e a cada decisão de política. O JWT só prova a identidade. | RNF-SEG-13 | `disabledUser_cannotCreateExecution_withValidToken`, `policy_usesCurrentRoles_notTokenSnapshot` |
-| TM-B1-04 | I/E | IDOR: acessar a execução ou aprovação de outro usuário ou organização por ID | Toda consulta é filtrada pela organização do contexto autenticado (e pela posse, quando aplicável). Um recurso inacessível responde `404`, não `403`, para não revelar que ele existe. | RNF-SEG-14, D04 §1 | `execution_returns404_forOtherOrganization` |
+| TM-B1-04 | I/E | IDOR: acessar a execução ou aprovação de outro usuário ou organização por ID | Toda consulta é filtrada pela organização do contexto autenticado (e pela posse, quando aplicável). Um recurso inacessível responde `404`, não `403`, para não revelar que ele existe. **O filtro vai na própria consulta** (`WHERE id = ? AND organization_id = ?`), e não numa verificação feita depois de buscar o objeto: o recurso de outro tenant nunca chega a ser carregado. | RNF-SEG-14, D04 §1 | `execution_returns404_forOtherOrganization` |
 | TM-B1-05 | T | *Mass assignment*: o cliente envia `organizationId`, `status` ou `requestedBy` no corpo | DTOs explícitos, sem nunca fazer binding de entidades. O `organization_id` e o `requested_by` vêm **sempre** do contexto autenticado. | D04 §4.11 | `createExecution_ignoresOrganizationIdFromBody` |
 | TM-B1-06 | I | Erros detalhados vazam detalhes internos | `problem+json` sem stack trace e sem mensagem de exceção interna | D03 §4 | `errors_doNotExposeStackTraces` |
 | TM-B1-07 | D | Enxurrada de mensagens gera custo e esgota recursos | Uma execução ativa por conversa, limite de execuções ativas por usuário, orçamento diário, limite de tamanho de corpo | RF-26, RNF-CUS-02 | `createExecution_returns409_whenConversationHasActiveExecution`, `createExecution_rejected_whenDailyBudgetExceeded` |
@@ -231,7 +231,7 @@ operações não autorizadas.
 | O mascaramento de segredos de terceiros é best-effort | Não existe detecção perfeita de segredos | Sempre documentado. Opção futura: um modelo local para ambientes sensíveis. |
 | Os dados enviados ao provedor de LLM saem da máquina | É inerente a um LLM externo | Um adapter de modelo local (ADR-010) |
 | Um humano pode ser convencido a aprovar uma ação ruim | A decisão final é humana por desenho | V5: quatro olhos em PROD; V4+: pré-condições |
-| Um backend comprometido pode reiniciar qualquer container | O proxy não filtra por alvo (a confirmar) | Verificar filtro por label no proxy; V7: agente remoto por host |
+| Um backend comprometido detém todo o poder operacional concedido a ele (por exemplo, reiniciar qualquer container) | A arquitetura protege **contra o abuso do agente**, não pretende resolver o comprometimento completo do backend. O proxy limita o *tipo* de operação, não o alvo (a confirmar). | Verificar filtro por label no proxy; V7: agente remoto por host |
 | Um DBA pode burlar o trigger da auditoria | O DBA está fora do modelo de ameaça do MVP | V7: separação de papéis no banco; hash encadeado |
 | O JWT é válido até expirar | Mitigado pela recarga do usuário a cada requisição (TM-B1-03) | V5, se houver necessidade de revogar sessões |
 | Sem TLS no MVP | Só roda em localhost | V7 |
@@ -257,11 +257,19 @@ O threat model **gerou decisões** em vez de só descrever as existentes.
 
 **Decisões pendentes, registradas para as fases seguintes:**
 
-1. **(V2) Ferramentas que enviam dados para fora são canais de exfiltração** (TM-B5-07). `createIssue` e
+1. **(V2, aprovada) Ferramentas que enviam dados para fora são canais de exfiltração** (TM-B5-07). `createIssue` e
    `addComment` são `LOW_RISK` pela definição do documento 05 (aditivas e reversíveis), mas **publicam
-   dados**, e uma injeção pode fazer o LLM copiar conteúdo sensível para uma issue pública. Proposta para
-   a V2: um atributo `externalEgress` na `ToolDefinition`, que implica aprovação por padrão e
-   mascaramento também dos **argumentos**. Isso vai virar uma ADR quando a V2 começar.
+   dados**, e uma injeção pode fazer o LLM copiar conteúdo sensível para uma issue pública. Decisão aprovada
+   para a V2: um atributo `externalEgress` na `ToolDefinition`:
+
+   ```
+   externalEgress = true → aprovação obrigatória → mascaramento dos argumentos → execução
+   ```
+
+   O problema aqui não é alterar a infraestrutura, e sim **dados saindo do perímetro de confiança**. Por
+   isso essa é uma dimensão **independente** do nível de risco, em vez de reclassificar `createIssue` como
+   `HIGH_RISK`. Não entra no MVP porque o MVP não tem nenhuma ferramenta de saída de dados. Vira uma ADR
+   quando a V2 começar.
 2. **(V6) O dashboard nunca renderiza imagens ou links remotos** da resposta do agente automaticamente
    (TM-B5-08).
 3. **(V4+) Pré-condições em ferramentas de risco** (TM-B7-08).

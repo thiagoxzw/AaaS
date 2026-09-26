@@ -116,7 +116,7 @@ deixe a numeração fora de ordem.
 | RNF-SEG-11 | As saídas de ferramentas têm sequências ANSI e caracteres de controle removidos e caracteres invisíveis de formatação neutralizados, antes de irem ao LLM, ao banco e à tela. (TM-B5-05) |
 | RNF-SEG-12 | O docker-socket-proxy só é alcançável pelo backend (rede interna, sem porta publicada), e o CI verifica que operações proibidas retornam `403`. (TM-B6-02/03) |
 | RNF-SEG-13 | O estado e os papéis do usuário são recarregados do banco a cada requisição e a cada decisão de política. O JWT prova apenas a identidade. (TM-B1-03, TM-B2-01) |
-| RNF-SEG-14 | Um recurso de outra organização, ou sem acesso, responde `404`, não `403`. (TM-B1-04) |
+| RNF-SEG-14 | Um recurso de outra organização, ou sem acesso, responde `404`, não `403`. O filtro de organização faz parte da **própria consulta** (`WHERE id = ? AND organization_id = ?`), e nunca é uma verificação feita depois de carregar o objeto. (TM-B1-04) |
 | RNF-SEG-15 | Os serviços de infraestrutura do Compose só publicam portas em `127.0.0.1`, e as credenciais padrão são sempre substituídas via `.env`. (TM-B8-05) |
 | RNF-SEG-16 | Os logs técnicos e as métricas não contêm conteúdo de mensagens, argumentos completos, saídas de ferramentas nem labels de alta cardinalidade. (TM-X-01/02) |
 | RNF-SEG-17 | O login tem limitação de tentativas e resposta idêntica para usuário inexistente e senha errada. (TM-B1-02) |
