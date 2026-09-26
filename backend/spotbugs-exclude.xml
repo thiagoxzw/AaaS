@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Project-wide SpotBugs / FindSecBugs exclusions. Each entry must say why it is safe.
+  Prefer @SuppressFBWarnings with a justification at the exact spot; use this file only for patterns
+  that are informational for the whole code base.
+-->
+<FindBugsFilter>
+    <!--
+      SPRING_ENDPOINT only lists every controller method as attack surface. That inventory is enforced
+      instead by ArchitectureTest.endpoints_declare_their_authorization (every endpoint declares
+      @PreAuthorize or @PublicEndpoint) and exercised by AuthorizationMatrixIT.
+    -->
+    <Match>
+        <Bug pattern="SPRING_ENDPOINT"/>
+    </Match>
+</FindBugsFilter>

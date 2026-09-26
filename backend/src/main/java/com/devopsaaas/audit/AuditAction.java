@@ -1,0 +1,12 @@
+package com.devopsaaas.audit;
+
+/** Audited actions. The list grows with each slice (docs/04-modelo-de-dados.md, section 4.11). */
+public enum AuditAction {
+    ENVIRONMENT_CREATED,
+    ENVIRONMENT_UPDATED,
+    ENVIRONMENT_AUTONOMY_CHANGED,
+    SERVICE_ALLOWLISTED,
+    SERVICE_UPDATED,
+    SERVICE_DISABLED,
+    SERVICE_ENABLED
+}
