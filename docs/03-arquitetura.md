@@ -479,13 +479,16 @@ com.devopsaaas
  ├── agent          orchestrator, context builder, AgentExecution, orçamentos
  ├── llm            port LlmGateway + adapters + contabilização de tokens e custo
  ├── tool           registry, policy engine, executor, ToolExecution, aprovações
- │    └── docker    ferramentas Docker + cliente da Docker Engine API
+ │    └── container ferramentas de container + port ContainerRuntime (sem nenhuma dependência de Docker)
+ ├── integration
+ │    └── docker    adapter ContainerRuntime → Docker Engine API (via proxy)
  ├── audit          registro e consulta de auditoria
  └── shared         erros, contexto de tenant, observabilidade, utilitários
 ```
 
 As regras de dependência (por exemplo, "`tool` não depende de `agent`" e "`llm` não conhece JPA") serão
-verificadas por testes de arquitetura, para que as fronteiras não se degradem com o tempo.
+verificadas por testes de arquitetura, para que as fronteiras não se degradem com o tempo. Entre elas: "`tool`
+não depende de `integration`" (as ferramentas conhecem só o port; veja o documento 05).
 
 ## 13. Stack e justificativa por fase
 
@@ -517,8 +520,8 @@ verificadas por testes de arquitetura, para que as fronteiras não se degradem c
 01 — Visão e problema                     ✔
 02 — Requisitos                           ✔
 03 — Arquitetura                          ✔  (este documento)
-04 — Modelo de dados                      ← em revisão
-05 — Contratos das ferramentas            (interface Tool, schemas, risco, erros, MVP × depois)
+04 — Modelo de dados                      ✔
+05 — Contratos das ferramentas            ← em revisão
 06 — Threat model                         (ativos, atores, STRIDE por fronteira, mitigações × requisitos)
 07 — Plano do MVP                         (fatias verticais, critérios de aceite, testes por fatia)
      ↓

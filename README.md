@@ -32,8 +32,8 @@ tentativas ficam registradas na auditoria.
 | [01 — Visão e problema](docs/01-visao-e-problema.md) | Problema, oportunidade, hipótese e como validá-la, riscos, personas, não-objetivos e roteiro da demo |
 | [02 — Requisitos](docs/02-requisitos.md) | Requisitos funcionais e não funcionais, com IDs estáveis e fase |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Três planos, fronteiras de confiança, componentes, cadeia de validação, autonomia, modelo de execução, idempotência e stack |
-| [04 — Modelo de dados](docs/04-modelo-de-dados.md) | Tabelas, relacionamentos, invariantes garantidas pelo banco, índices e consultas de auditoria *(em revisão)* |
-| 05 — Contratos das ferramentas | *a fazer* |
+| [04 — Modelo de dados](docs/04-modelo-de-dados.md) | Tabelas, relacionamentos, invariantes garantidas pelo banco, índices e consultas de auditoria |
+| [05 — Contratos das ferramentas](docs/05-contratos-das-ferramentas.md) | Interface `Tool`, port `ContainerRuntime`, risco, erros, catálogo do MVP e testes *(em revisão)* |
 | 06 — Threat model | *a fazer* |
 | 07 — Plano do MVP | *a fazer* |
 | [ADRs](docs/adr/README.md) | Decisões arquiteturais registradas |

@@ -1,6 +1,6 @@
 # 04 — Modelo de dados
 
-> Status: **proposta**, em revisão. Nomes de tabelas e colunas em inglês, conforme o
+> Status: **aceito** (2026-09-26), com três pontos a provar por teste de integração (seção 10). Nomes de tabelas e colunas em inglês, conforme o
 > [CONTRIBUTING](../CONTRIBUTING.md). O DDL definitivo será escrito nas migrações Flyway durante a
 > implementação. Este documento define **o que** existe e **por quê**.
 
@@ -8,12 +8,12 @@
 
 | Convenção | Decisão | Por quê |
 |---|---|---|
-| Chave primária | `id uuid`, de preferência **UUIDv7** (ordenado no tempo), gerado pela aplicação | IDs não enumeráveis na API (uma defesa extra, que **não** substitui a autorização), geráveis antes do insert e sem sequência central. O UUIDv7 mantém boa localidade no índice B-tree, ao contrário do UUIDv4 aleatório. *Ainda vou verificar o melhor mecanismo de geração (suporte do Hibernate, biblioteca ou função nativa do PostgreSQL 18, que acredito ter `uuidv7()`).* |
+| Chave primária | `id uuid`, de preferência **UUIDv7** (ordenado no tempo), gerado pela aplicação | IDs não enumeráveis na API (uma defesa extra, que **não** substitui a autorização), geráveis antes do insert e sem sequência central. O UUIDv7 mantém boa localidade no índice B-tree, ao contrário do UUIDv4 aleatório. **Decisão: o UUID nasce na aplicação**, e isso vale para todas as entidades de domínio. O domínio não depende de uma função do PostgreSQL para ter identidade. *O mecanismo exato de geração (suporte do Hibernate ou uma biblioteca) será escolhido e provado por teste.* |
 | Tenant | Toda tabela, exceto `organization`, tem `organization_id uuid NOT NULL` | [ADR-005](adr/0005-organization-id-desde-o-mvp.md). **Sem exceções**: isso fica fácil de verificar por teste e prepara o Row-Level Security da V5. |
 | Integridade entre tenants | As FKs entre tabelas de domínio são **compostas**: `(organization_id, parent_id) → parent(organization_id, id)` | O **banco** impede que uma `tool_execution` da organização A aponte para uma `agent_execution` da organização B, mesmo com um bug na aplicação. No JPA, o relacionamento continua mapeado pelo `id`, e a constraint composta existe só no SQL. |
 | Datas | `timestamptz` em UTC (`Instant` no Java) | Sem ambiguidade de fuso horário. |
 | Enums | `text` + `CHECK (col IN (...))`, `@Enumerated(STRING)` no JPA | Adicionar um valor é uma migração trivial. Os tipos `ENUM` nativos do PostgreSQL são mais rígidos de evoluir. |
-| `jsonb` | **Só** para dados de formato variável: argumentos e saídas de ferramentas, detalhes de auditoria, snapshot de contexto | Nada que precise de filtro ou junção relacional fica em `jsonb`. |
+| `jsonb` | **Só** para dados de formato variável: argumentos e saídas de ferramentas, detalhes de auditoria, snapshot de contexto | Nada que precise de filtro, junção ou regra de negócio fica em `jsonb`: isso continua sendo coluna normal. No Java, **não** haverá entidades cheias de `Map<String, Object>`. A entidade guarda o JSON, e a conversão para o *record* tipado de cada ferramenta acontece no executor (documento 05). |
 | Concorrência | `version bigint` (lock otimista) nas entidades que mudam de estado concorrentemente | Base das transições condicionais da idempotência (arquitetura, seção 9). |
 | Exclusão | Nenhuma exclusão física de entidades referenciadas pela auditoria. Usa-se `status = DISABLED`/`ARCHIVED`. As FKs são `ON DELETE RESTRICT`. | O histórico precisa continuar consistente. |
 | Nomes | `snake_case`, tabelas no singular. `user` é palavra reservada no PostgreSQL, por isso a tabela chama `app_user`. | |
@@ -81,7 +81,7 @@ organization
  │         ├── llm_call                      (cada ida e volta ao LLM)
  │         └── tool_execution                (cada proposta, inclusive as negadas)
  │              └── approval                 (0..1)
- └── audit_event                             (append-only, sem FKs para o domínio)
+ └── audit_event                             (append-only, sem nenhuma FK)
 ```
 
 ## 4. Tabelas do MVP
@@ -130,8 +130,22 @@ para a V5, porque muda o modelo de autenticação (em qual organização estou a
 | `AUDIT_READ` | | | ✔ | ✔ |
 | `ENVIRONMENT_MANAGE`: ambientes, allowlist e nível de autonomia | | | | ✔ |
 
-Cada ferramenta declara a permissão exigida. É isso que implementa a regra de que o agente nunca tem mais
-poder que o usuário (arquitetura, seção 2.2).
+Cada ferramenta declara a **permissão** exigida. É isso que implementa a regra de que o agente nunca tem
+mais poder que o usuário (arquitetura, seção 2.2).
+
+**Regra arquitetural: papéis nunca são usados diretamente para autorizar.**
+
+```
+User → Role → PermissionResolver (matriz centralizada) → Permission → Policy Engine → Tool
+```
+
+- Ferramentas, controllers e serviços verificam **permissões** (`TOOL_OPERATE`), nunca **papéis**
+  (`OPERATOR`). "OPERATOR" não significa "pode fazer qualquer operação"; significa o conjunto de
+  permissões que a matriz atribui a ele.
+- A matriz existe em **um único lugar** (`PermissionResolver`). Mudar o que um papel pode fazer é mudar
+  uma linha, não procurar `if (role == …)` pelo código.
+- Um teste de arquitetura garante que o enum `Role` só é referenciado pelo módulo `identity` e pelo
+  `PermissionResolver`.
 
 ### 4.3 `environment`
 
@@ -346,9 +360,16 @@ Ações iniciais: `ENVIRONMENT_CREATED`, `ENVIRONMENT_UPDATED`, `ENVIRONMENT_AUT
   separado para as migrações).
 - Encadear hashes entre eventos, para detectar adulteração, é uma opção futura. Não é necessário agora.
 
-**Por que não há FKs para o domínio (exceto `organization`):** a auditoria é um registro independente.
-Ela não pode bloquear operações nem ser afetada por elas, e continua válida mesmo que o modelo de
-domínio mude.
+**Por que a auditoria não tem nenhuma FK:** ela é um **registro histórico imutável**, não uma extensão
+do modelo transacional. Os IDs (`actor_user_id`, `agent_execution_id`, `resource_id`…) são **valores
+informativos**. Se um usuário ou um ambiente for desativado ou removido, o histórico continua existindo, e
+a auditoria nunca bloqueia nem é bloqueada por operações do domínio.
+
+**Mas o `organization_id` é obrigatório** (`NOT NULL`), mesmo sem FK. Ele é o primeiro campo de todos os
+índices da tabela e a base do isolamento lógico, e na V5 é a coluna usada pelo Row-Level Security. Como
+não há FK composta aqui, a consistência do tenant da auditoria é garantida pela aplicação: o
+`organization_id` vem sempre do contexto autenticado, nunca da entrada. Isso é coberto por teste de
+isolamento.
 
 **A auditoria é gravada na mesma transação do fato que registra:** é impossível mudar o estado sem gerar
 o evento. Para chamadas externas: `RUNNING` + `TOOL_EXECUTION_STARTED` são commitados **antes** da
@@ -360,7 +381,7 @@ Estas regras valem **mesmo que a aplicação tenha um bug**:
 
 | # | Invariante | Mecanismo |
 |---|---|---|
-| 1 | Nenhum registro aponta para um registro de outra organização | FKs compostas `(organization_id, id)` |
+| 1 | Nenhum registro aponta para um registro de outra organização | FKs compostas `(organization_id, id)`. A `audit_event` não tem FKs (seção 4.11), e nela o tenant vem do contexto autenticado. |
 | 2 | No máximo **uma execução ativa por conversa** | Índice único parcial em `agent_execution(conversation_id)` com `status IN ('QUEUED','RUNNING','WAITING_APPROVAL')`. Uma segunda mensagem durante uma execução ativa resulta em `409`. |
 | 3 | A mesma `Idempotency-Key` do mesmo usuário gera uma única execução | Índice único parcial `(requested_by, idempotency_key)` com `idempotency_key IS NOT NULL` |
 | 4 | No máximo uma aprovação por chamada de ferramenta | `UNIQUE(approval.tool_execution_id)` |
@@ -470,10 +491,14 @@ Tudo isso é exposto por um endpoint de linha do tempo da execução. O contrato
 | Cache, locks distribuídos, rate limit | Redis, **quando entrar** ([ADR-004](adr/0004-adiar-redis-e-rabbitmq.md)) | São dados efêmeros. A perda não afeta a correção. |
 | Segredos | Variáveis de ambiente ou arquivos de segredo, **nunca** no banco no MVP | RF-13 |
 
-## 10. Pontos a validar na implementação
+## 10. Pontos a validar na implementação (testes de integração)
 
-- O mecanismo de geração de UUIDv7 (seção 1).
-- O mapeamento no JPA de relacionamentos com FK composta no banco e FK simples na entidade. Espero que
-  funcione sem truques, mas vou provar com um teste de integração.
-- O mapeamento de `jsonb` no Hibernate (acredito que as versões recentes suportem nativamente; confirmar).
-- A atribuição concorrente de `seq`. Deve ser segura dado o invariante 2, mas vai ter teste.
+Estes pontos **não são decididos por suposição**. Cada um vira um teste de integração na versão exata de
+Spring Boot, Hibernate e PostgreSQL fixada no projeto, rodando com Testcontainers.
+
+| Ponto | O que o teste prova | Se falhar |
+|---|---|---|
+| UUIDv7 gerado pela aplicação | Os IDs são gerados antes do insert, são UUID versão 7 e são monotônicos dentro do mesmo processo | Troca-se o mecanismo de geração, mas o UUID continua nascendo na aplicação |
+| `jsonb` + Hibernate | Gravar e ler `arguments`, `output`, `details` e `context_snapshot` preserva o conteúdo, e a coluna é `jsonb` de verdade | Usar um conversor explícito, sem mudar o schema |
+| FK composta + JPA | (a) O mapeamento simples por `id` grava corretamente com a FK composta no banco. (b) Um insert que aponta para um pai de **outra** organização é **rejeitado pelo banco** | **Não se enfraquece a regra de isolamento** para facilitar o Hibernate. As alternativas, que mantêm a garantia no banco, são um mapeamento JPA com colunas compostas, ou um trigger de consistência de tenant e/ou Row-Level Security antecipado |
+| Atribuição de `seq` | Mensagens e chamadas concorrentes não geram `seq` duplicado | Um lock explícito na linha da conversa ou execução |

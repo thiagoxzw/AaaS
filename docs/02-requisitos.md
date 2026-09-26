@@ -120,7 +120,7 @@ deixe a numeração fora de ordem.
 | RNF-CONF-01 | Máximo de chamadas de ferramenta por execução | 10 |
 | RNF-CONF-02 | Máximo de iterações do LLM por execução | 8 |
 | RNF-CONF-03 | Tempo máximo de processamento ativo por execução (não conta a espera por aprovação) | 5 min |
-| RNF-CONF-04 | Timeout por ferramenta | 10 s para read-only, 60 s para restart |
+| RNF-CONF-04 | Timeout por ferramenta | Definido na ferramenta (documento 05). Padrão de 10 s para read-only. |
 | RNF-CONF-05 | Tamanho máximo da saída de uma ferramenta enviada ao LLM | ~16 KB, com os logs truncados às últimas N linhas |
 | RNF-CONF-06 | Retentativas automáticas só para ferramentas **idempotentes read-only** e erros transitórios | no máximo 3 retentativas por chamada, com backoff exponencial |
 | RNF-CONF-07 | Ferramentas `HIGH_RISK` ou `DESTRUCTIVE` **nunca** têm retentativa automática | — |
