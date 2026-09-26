@@ -165,6 +165,8 @@ Mudar `autonomy_level` ou `status` gera um `audit_event`.
 
 ### 4.4 `environment_service` (allowlist)
 
+No código, a entidade se chama `AllowlistedService`, para não confundir com um `@Service` do Spring.
+
 | Coluna | Tipo | Nulo | Notas |
 |---|---|---|---|
 | environment_id | uuid | não | FK composta |
@@ -172,7 +174,7 @@ Mudar `autonomy_level` ou `status` gera um `audit_event`.
 | container_name | text | não | Nome real do container, que **só o backend conhece** |
 | description | text | sim | Entra no contexto do LLM ("API de pedidos") |
 | enabled | boolean | não | |
-| updated_at | timestamptz | não | |
+| updated_at, version | | não | `version` para o controle de concorrência do `PATCH` (fatia 1) |
 
 Constraints: `UNIQUE(environment_id, name)` e `UNIQUE(environment_id, container_name)`.
 
@@ -339,7 +341,7 @@ informações que **não vêm do modelo**: ferramenta, parâmetros exatos, risco
 | trace_id | text | sim | Correlação com os logs |
 
 Ações iniciais: `ENVIRONMENT_CREATED`, `ENVIRONMENT_UPDATED`, `ENVIRONMENT_AUTONOMY_CHANGED`,
-`SERVICE_ALLOWLISTED`, `SERVICE_REMOVED`, `EXECUTION_CREATED`, `EXECUTION_CANCELLED`,
+`SERVICE_ALLOWLISTED`, `SERVICE_UPDATED`, `SERVICE_DISABLED`, `SERVICE_ENABLED`, `EXECUTION_CREATED`, `EXECUTION_CANCELLED`,
 `EXECUTION_FINISHED`, `TOOL_CALL_DENIED`, `TOOL_EXECUTION_STARTED`, `TOOL_EXECUTION_SUCCEEDED`,
 `TOOL_EXECUTION_FAILED`, `TOOL_EXECUTION_OUTCOME_UNKNOWN`, `APPROVAL_REQUESTED`, `APPROVAL_GRANTED`,
 `APPROVAL_REJECTED`, `APPROVAL_EXPIRED`.

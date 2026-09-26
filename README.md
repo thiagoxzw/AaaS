@@ -4,7 +4,8 @@
 > executa, pede aprovação e audita.**
 
 ⚠️ **Status: em construção.** Design aceito (documentos 01–07). Implementado até agora: **fatia 0,
-esqueleto executável** ([detalhes](docs/fatias/00-esqueleto.md)). O README completo (exemplos, screenshots,
+esqueleto executável** ([detalhes](docs/fatias/00-esqueleto.md)) e **fatia 1, autenticação, ambientes e
+auditoria** ([detalhes](docs/fatias/01-autenticacao-ambientes-auditoria.md)). O README completo (exemplos, screenshots,
 API) será escrito conforme o sistema for construído.
 
 ## Como executar (estado atual)
@@ -12,8 +13,21 @@ API) será escrito conforme o sistema for construído.
 Requisitos: Docker com Compose. Para rodar os testes: JDK 25.
 
 ```bash
-cp .env.example .env          # troque as senhas; sem elas o compose não sobe
+cp .env.example .env          # troque todos os valores; sem eles o compose não sobe
 docker compose up -d --build
+```
+
+Exemplo de uso da API (o admin é criado na primeira subida, a partir de `ADMIN_EMAIL`/`ADMIN_PASSWORD`):
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"<ADMIN_EMAIL>","password":"<ADMIN_PASSWORD>"}' | jq -r .accessToken)
+
+curl -s -X POST localhost:8080/api/v1/environments -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"local","type":"DOCKER","tier":"DEV","autonomyLevel":"ASSISTED","connectionRef":"local"}'
+
+curl -s localhost:8080/api/v1/audit-events -H "Authorization: Bearer $TOKEN"
 ```
 
 | Serviço | Endereço |
