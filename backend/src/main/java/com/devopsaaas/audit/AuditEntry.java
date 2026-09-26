@@ -9,23 +9,60 @@ import java.util.UUID;
 /** What to record. Details hold only values produced by the application itself, never raw request input. */
 public final class AuditEntry {
 
-    private final CurrentUser actor;
+    private final AuditActorType actorType;
+    private final UUID organizationId;
+    private final UUID userId;
+    private final String actorLabel;
     private final AuditAction action;
     private final AuditResourceType resourceType;
     private final UUID resourceId;
     private final Map<String, Object> details = new LinkedHashMap<>();
     private AuditOutcome outcome = AuditOutcome.SUCCESS;
+    private String toolName;
+    private UUID agentExecutionId;
+    private UUID toolExecutionId;
 
-    private AuditEntry(CurrentUser actor, AuditAction action, AuditResourceType resourceType, UUID resourceId) {
-        this.actor = actor;
+    private AuditEntry(AuditActorType actorType, UUID organizationId, UUID userId, String actorLabel,
+            AuditAction action, AuditResourceType resourceType, UUID resourceId) {
+        this.actorType = actorType;
+        this.organizationId = organizationId;
+        this.userId = userId;
+        this.actorLabel = actorLabel;
         this.action = action;
         this.resourceType = resourceType;
         this.resourceId = resourceId;
     }
 
+    /** A person acted directly (for example through the API). */
     public static AuditEntry byUser(CurrentUser actor, AuditAction action, AuditResourceType resourceType,
             UUID resourceId) {
-        return new AuditEntry(actor, action, resourceType, resourceId);
+        return new AuditEntry(AuditActorType.USER, actor.organizationId(), actor.userId(), actor.email(), action,
+                resourceType, resourceId);
+    }
+
+    /**
+     * The agent acted technically, on behalf of the user who asked: answers both "who executed?" (AGENT) and
+     * "at whose request?" ({@code on_behalf_of_user_id}).
+     */
+    public static AuditEntry byAgentOnBehalfOf(UUID organizationId, UUID requestedBy, AuditAction action,
+            AuditResourceType resourceType, UUID resourceId) {
+        return new AuditEntry(AuditActorType.AGENT, organizationId, requestedBy, "agent", action, resourceType,
+                resourceId);
+    }
+
+    public AuditEntry toolName(String value) {
+        this.toolName = value;
+        return this;
+    }
+
+    public AuditEntry agentExecutionId(UUID value) {
+        this.agentExecutionId = value;
+        return this;
+    }
+
+    public AuditEntry toolExecutionId(UUID value) {
+        this.toolExecutionId = value;
+        return this;
     }
 
     public AuditEntry detail(String key, Object value) {
@@ -38,8 +75,32 @@ public final class AuditEntry {
         return this;
     }
 
-    CurrentUser actor() {
-        return actor;
+    AuditActorType actorType() {
+        return actorType;
+    }
+
+    UUID organizationId() {
+        return organizationId;
+    }
+
+    UUID userId() {
+        return userId;
+    }
+
+    String actorLabel() {
+        return actorLabel;
+    }
+
+    String toolNameValue() {
+        return toolName;
+    }
+
+    UUID agentExecutionIdValue() {
+        return agentExecutionId;
+    }
+
+    UUID toolExecutionIdValue() {
+        return toolExecutionId;
     }
 
     AuditAction action() {

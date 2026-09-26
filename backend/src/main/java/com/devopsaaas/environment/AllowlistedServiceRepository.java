@@ -15,6 +15,9 @@ interface AllowlistedServiceRepository extends Repository<AllowlistedService, UU
     List<AllowlistedService> findAllByEnvironmentIdAndOrganizationIdOrderByNameAsc(
             UUID environmentId, UUID organizationId);
 
+    Optional<AllowlistedService> findByEnvironmentIdAndOrganizationIdAndName(
+            UUID environmentId, UUID organizationId, String name);
+
     boolean existsByEnvironmentIdAndName(UUID environmentId, String name);
 
     boolean existsByEnvironmentIdAndContainerName(UUID environmentId, String containerName);

@@ -3,6 +3,7 @@ package com.devopsaaas.support;
 import com.devopsaaas.identity.JwtTokenService;
 import com.devopsaaas.identity.Role;
 import com.devopsaaas.shared.id.Ids;
+import com.devopsaaas.tool.testing.TestToolsConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
@@ -11,6 +12,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
@@ -34,6 +36,8 @@ import tools.jackson.databind.json.JsonMapper;
  * Base for integration tests: one PostgreSQL container for the whole run (same image as docker compose),
  * the real application on a random port, and helpers to create tenants, users and tokens.
  *
+ * <p>Tools that exist only in tests ({@link TestToolsConfiguration}) are registered for every integration test.
+ *
  * <p>Tests never clean the database (the audit trail cannot be deleted by design); they isolate themselves
  * with unique names and their own organizations instead.
  */
@@ -45,6 +49,7 @@ import tools.jackson.databind.json.JsonMapper;
                 "devops.bootstrap.admin-email=" + IntegrationTest.BOOTSTRAP_EMAIL,
                 "devops.bootstrap.admin-password=" + IntegrationTest.BOOTSTRAP_PASSWORD
         })
+@Import(TestToolsConfiguration.class)
 public abstract class IntegrationTest {
 
     public static final String JWT_SECRET = "integration-test-secret-with-more-than-32-bytes";
@@ -174,9 +179,24 @@ public abstract class IntegrationTest {
     }
 
     protected JsonNode createEnvironment(TestUser user, String name) {
-        ResponseEntity<String> response = post("/api/v1/environments", user.token(), environmentBody(name));
+        return createEnvironment(user, name, "ASSISTED");
+    }
+
+    protected JsonNode createEnvironment(TestUser user, String name, String autonomyLevel) {
+        Map<String, Object> body = new java.util.HashMap<>(environmentBody(name));
+        body.put("autonomyLevel", autonomyLevel);
+        ResponseEntity<String> response = post("/api/v1/environments", user.token(), body);
         if (response.getStatusCode().value() != 201) {
             throw new IllegalStateException("Environment creation failed: " + response);
+        }
+        return read(response);
+    }
+
+    protected JsonNode allowlistService(TestUser user, String environmentId, String name, String containerName) {
+        ResponseEntity<String> response = post("/api/v1/environments/" + environmentId + "/services", user.token(),
+                Map.of("name", name, "containerName", containerName));
+        if (response.getStatusCode().value() != 201) {
+            throw new IllegalStateException("Allowlisting failed: " + response);
         }
         return read(response);
     }
