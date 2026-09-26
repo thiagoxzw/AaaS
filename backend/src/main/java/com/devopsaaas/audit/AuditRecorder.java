@@ -27,19 +27,22 @@ public class AuditRecorder {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void record(AuditEntry entry) {
+        boolean byAgent = entry.actorType() == AuditActorType.AGENT;
         AuditEvent event = new AuditEvent(
                 Ids.newId(),
-                entry.actor().organizationId(),
+                entry.organizationId(),
                 Timestamps.now(),
-                AuditActorType.USER,
-                entry.actor().userId(),
-                entry.actor().email(),
+                entry.actorType(),
+                byAgent ? null : entry.userId(),
+                byAgent ? entry.userId() : null,
+                entry.actorLabel(),
                 entry.action(),
                 entry.resourceType(),
                 entry.resourceId(),
                 entry.outcome(),
                 jsonMapper.writeValueAsString(entry.details()),
                 MDC.get(RequestIdFilter.MDC_KEY));
+        event.linkTool(entry.toolNameValue(), entry.agentExecutionIdValue(), entry.toolExecutionIdValue());
         entityManager.persist(event);
     }
 }

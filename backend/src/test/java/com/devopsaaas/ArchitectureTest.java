@@ -6,6 +6,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 import com.devopsaaas.shared.security.PublicEndpoint;
+import com.devopsaaas.tool.api.Tool;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -45,6 +46,24 @@ class ArchitectureTest {
     static final ArchRule audit_does_not_depend_on_domain_modules = noClasses()
             .that().resideInAPackage("com.devopsaaas.audit..")
             .should().dependOnClassesThat().resideInAnyPackage("com.devopsaaas.environment..");
+
+    /** The tool framework builds on environment and audit, never the other way around. */
+    @ArchTest
+    static final ArchRule domain_modules_do_not_depend_on_tools = noClasses()
+            .that().resideInAnyPackage("com.devopsaaas.environment..", "com.devopsaaas.audit..")
+            .should().dependOnClassesThat().resideInAPackage("com.devopsaaas.tool..");
+
+    /**
+     * Tools are thin (docs/05-contratos-das-ferramentas.md, 2.1): persistence, auditing and HTTP belong to the
+     * executor and to adapters. Empty until the first production tool arrives in slice 3.
+     */
+    @ArchTest
+    static final ArchRule tools_do_not_touch_persistence_or_http = noClasses()
+            .that().implement(Tool.class)
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "jakarta.persistence..", "org.springframework.jdbc..", "org.springframework.data..",
+                    "org.springframework.web.client..", "java.net.http..", "com.devopsaaas.audit..")
+            .allowEmptyShould(true);
 
     /**
      * Repositories extend the bare Repository interface, so an unscoped findById/findAll cannot be called by

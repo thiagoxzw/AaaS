@@ -86,7 +86,12 @@ pode "esquecer" uma regra de segurança.
 | `impactDescription` | Optional\<String\> | **Obrigatório** fora de `READ_ONLY`. Texto determinístico e confiável, exibido na aprovação. |
 | `maxOutputBytes` | int | Limite rígido aplicado pelo executor |
 
-O schema JSON dos parâmetros enviado ao LLM é **derivado do record de entrada** (tipos, obrigatoriedade e
+**Decidido na fatia 2:** o schema é gerado por uma implementação própria (`FlatRecordSchemaGenerator`), atrás da
+interface `JsonSchemaGenerator` para poder ser trocada sem mexer no `ToolRegistry`. As entradas das ferramentas são
+**records planos**: string, números, boolean e enum, com `@NotBlank`, `@Pattern`, `@Size`, `@Min` e `@Max` (e
+`@Description` para o texto de cada campo). Objetos aninhados, listas e mapas são recusados na inicialização.
+
+O texto original, antes da decisão: o schema JSON dos parâmetros enviado ao LLM é **derivado do record de entrada** (tipos, obrigatoriedade e
 restrições do Bean Validation), para existir uma única fonte da verdade. *Ainda preciso verificar qual
 biblioteca de geração de JSON Schema a partir de classes Java usar e se ela lê as anotações do Bean
 Validation. Se não houver uma opção confiável, o schema será escrito à mão por ferramenta, com um teste de

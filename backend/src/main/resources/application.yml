@@ -49,3 +49,7 @@ devops:
       max-failures-per-ip: 50
       window: 15m
   # bootstrap.admin-email / bootstrap.admin-password: from ADMIN_EMAIL / ADMIN_PASSWORD
+  tools:
+    max-concurrent-executions: 16
+    max-retries: 3
+    initial-backoff: 200ms

@@ -28,3 +28,4 @@ aprovação e outras executadas. A resposta ao usuário, a auditoria e o futuro 
 - (+) A auditoria, a resposta e o dashboard leem a mesma fonte.
 - (+) Tentativas negadas (inclusive as induzidas por prompt injection) ficam visíveis e mensuráveis.
 - (−) Mais linhas no banco por execução. O volume é irrelevante nesta escala.
+- (−) **Pendência registrada (2026-09-26):** a `tool_execution` nasceu na fatia 2, antes da `agent_execution` (fatia 4). Por isso, `agent_execution_id` e `llm_call_id` são obrigatórios no domínio, mas ainda sem FK no banco. A migração da fatia 4 que adiciona as FKs compostas é critério de aceite obrigatório daquela fatia (documento 07).

@@ -31,7 +31,7 @@ public class AuditEvent {
     private AuditActorType actorType;
 
     private UUID actorUserId;
-    // on_behalf_of_user_id exists in the table and is mapped when the agent starts acting for users (slice 4).
+    private UUID onBehalfOfUserId;
     private String actorLabel;
 
     @Enumerated(EnumType.STRING)
@@ -41,6 +41,9 @@ public class AuditEvent {
     private AuditResourceType resourceType;
 
     private UUID resourceId;
+    private String toolName;
+    private UUID agentExecutionId;
+    private UUID toolExecutionId;
 
     @Enumerated(EnumType.STRING)
     private AuditOutcome outcome;
@@ -55,13 +58,14 @@ public class AuditEvent {
     }
 
     AuditEvent(UUID id, UUID organizationId, Instant occurredAt, AuditActorType actorType, UUID actorUserId,
-            String actorLabel, AuditAction action, AuditResourceType resourceType, UUID resourceId,
-            AuditOutcome outcome, String details, String traceId) {
+            UUID onBehalfOfUserId, String actorLabel, AuditAction action, AuditResourceType resourceType,
+            UUID resourceId, AuditOutcome outcome, String details, String traceId) {
         this.id = id;
         this.organizationId = organizationId;
         this.occurredAt = occurredAt;
         this.actorType = actorType;
         this.actorUserId = actorUserId;
+        this.onBehalfOfUserId = onBehalfOfUserId;
         this.actorLabel = actorLabel;
         this.action = action;
         this.resourceType = resourceType;
@@ -89,6 +93,28 @@ public class AuditEvent {
 
     public UUID getActorUserId() {
         return actorUserId;
+    }
+
+    public UUID getOnBehalfOfUserId() {
+        return onBehalfOfUserId;
+    }
+
+    public String getToolName() {
+        return toolName;
+    }
+
+    public UUID getAgentExecutionId() {
+        return agentExecutionId;
+    }
+
+    public UUID getToolExecutionId() {
+        return toolExecutionId;
+    }
+
+    void linkTool(String tool, UUID agentExecution, UUID toolExecution) {
+        this.toolName = tool;
+        this.agentExecutionId = agentExecution;
+        this.toolExecutionId = toolExecution;
     }
 
     public String getActorLabel() {
