@@ -13,3 +13,5 @@ que *substitui* a anterior.
 | [0005](0005-organization-id-desde-o-mvp.md) | `organization_id` em todas as tabelas de domínio desde o MVP | Proposta |
 | [0006](0006-aprovacao-como-entidade.md) | Aprovação humana como entidade e máquina de estados, não como texto | Proposta |
 | [0007](0007-sem-memoria-vetorial-no-mvp.md) | Sem memória vetorial no MVP | Proposta |
+| [0008](0008-niveis-de-autonomia.md) | Níveis de autonomia como configuração de política | Proposta |
+| [0009](0009-historico-de-toolexecution-como-fonte-da-verdade.md) | `AgentExecution` separado de `ToolExecution`; o histórico é a fonte da verdade | Proposta |

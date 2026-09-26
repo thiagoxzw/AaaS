@@ -57,11 +57,31 @@ justamente nos momentos de pressão.
    limites, sem aprovação estruturada e sem trilha de auditoria. São inaceitáveis em qualquer ambiente
    que importe.
 
-### Declaração do problema
+### Problema, oportunidade e hipótese
 
-> Desenvolvedores e pequenas equipes precisam diagnosticar e operar seus serviços com rapidez, mas as
-> informações estão fragmentadas em várias ferramentas, e os assistentes de IA disponíveis ou não têm
-> acesso ao estado real do sistema, ou têm acesso irrestrito e não auditável.
+> **Problema:** operações DevOps rotineiras exigem que desenvolvedores alternem entre várias ferramentas
+> e executem procedimentos repetitivos, enquanto os agentes de IA existentes podem ter acesso amplo
+> demais à infraestrutura.
+>
+> **Oportunidade:** criar uma camada de controle que permita ao agente usar ferramentas operacionais
+> reais **sem** dar a ele autoridade irrestrita sobre a infraestrutura.
+>
+> **Hipótese:** separar a **capacidade de raciocínio** do LLM da **autoridade de execução** do backend
+> permite combinar automação assistida por IA com políticas determinísticas de segurança, aprovação
+> humana e auditoria.
+
+### Como a hipótese será validada
+
+Uma hipótese só é útil se puder falhar. Estes são os critérios verificáveis:
+
+| # | Afirmação | Como verificar |
+|---|---|---|
+| H1 | **Segurança não depende do bom comportamento do LLM.** | Uma suíte de testes automatizados com um **LLM falso que se comporta mal de propósito**: ele obedece a prompt injection vinda dos logs, inventa ferramentas, passa containers fora da allowlist e parâmetros inválidos, e tenta reutilizar aprovações expiradas. Critério: **zero** ações não autorizadas executadas. |
+| H2 | **O agente é útil de verdade.** | Um conjunto de cenários de falha reproduzíveis no `demo-api` (sai com erro, OOM, `unhealthy`, crash loop), executados com o LLM real. Critério: o agente identifica a causa correta em uma proporção mínima dos cenários. A meta numérica será definida depois das primeiras medições; não faz sentido inventá-la agora. |
+| H3 | **Toda ação é explicável.** | Para toda ação executada, a API responde quem pediu, quem aprovou, quando, por quê (o pedido, as observações e a justificativa do agente) e qual foi o resultado. Isso é verificado por testes de API. |
+
+O ponto mais importante é o H1. Os testes de segurança assumem que o LLM **já foi comprometido**. Se
+algo perigoso só não acontece porque o modelo "se comportou", a arquitetura falhou.
 
 ### Solução proposta
 
@@ -84,16 +104,35 @@ Um agente acessível por API REST que:
 | **Admin da organização** | V5 | Gerencia usuários, ambientes, políticas, API keys e limites. |
 | **Auditor** | V5 | Acesso somente leitura ao histórico e à auditoria. |
 
-## 4. Não-objetivos (o que o projeto deliberadamente NÃO é)
+## 4. Não-objetivos
 
-- **Não é um executor de shell.** Não existe uma ferramenta do tipo `runCommand(String)`, em nenhuma fase.
-- **Não é um chatbot de conhecimento geral sobre DevOps.** Perguntas genéricas não são o foco.
-- **Não é autônomo 24/7 no MVP.** O agente só age quando alguém pede. Remediação automática disparada
-  por alertas é uma evolução futura e opcional, que exigiria políticas ainda mais rígidas.
-- **Não substitui Kubernetes, ArgoCD, PagerDuty etc.** O agente orquestra ferramentas existentes em vez
-  de reimplementá-las.
-- **Não tem frontend no MVP.** A interação é via API (Swagger UI, `curl` ou arquivos `.http`).
-- **Não usa memória vetorial no MVP.** Veja a [ADR-007](adr/0007-sem-memoria-vetorial-no-mvp.md).
+O objetivo é **demonstrar uma arquitetura segura para agentes operacionais com ferramentas
+controladas, começando por Docker local**. Tudo o que está abaixo fica fora de escopo de propósito. Se
+alguém perguntar "por que não suporta Kubernetes?", a resposta é que isso não faz parte do problema que
+o projeto se propôs a resolver.
+
+**Nunca, em nenhuma fase:**
+
+- executar comandos arbitrários no host. Não existe uma ferramenta do tipo `runCommand(String)`;
+- dar autonomia irrestrita ao agente. O nível de autonomia é configuração de segurança, não decisão do
+  LLM (veja a [ADR-008](adr/0008-niveis-de-autonomia.md));
+- criar ou treinar um LLM próprio.
+
+**Fora de escopo do MVP e da V1:**
+
+- substituir um engenheiro DevOps. O agente é um assistente operacional;
+- garantir diagnóstico correto em todos os incidentes. O objetivo é um diagnóstico útil e verificável,
+  com a evidência (logs e status) sempre visível;
+- administrar infraestrutura sem configuração prévia. O agente só enxerga ambientes cadastrados e
+  serviços registrados na allowlist;
+- suportar Kubernetes, AWS, Azure, GCP ou vários provedores ao mesmo tempo. O MVP é Docker local;
+- implementar uma plataforma completa de observabilidade. O projeto **consome** Prometheus e Grafana,
+  não os substitui;
+- substituir ArgoCD, PagerDuty ou ferramentas similares. O agente orquestra ferramentas existentes;
+- agir sozinho, 24/7, disparado por alertas. No MVP o agente só age quando alguém pede;
+- ser um chatbot de conhecimento geral sobre DevOps;
+- ter frontend. A interação é via API (Swagger UI, `curl` ou arquivos `.http`);
+- usar memória vetorial (veja a [ADR-007](adr/0007-sem-memoria-vetorial-no-mvp.md)).
 
 ## 5. Critério de sucesso do MVP (roteiro da demo)
 
