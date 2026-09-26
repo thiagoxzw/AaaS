@@ -1,6 +1,6 @@
 # 05 — Contratos das ferramentas
 
-> Status: **proposta**, em revisão. Os trechos de Java são **esboços conceituais** para fixar os
+> Status: **aceito** (2026-09-26). Os trechos de Java são **esboços conceituais** para fixar os
 > contratos. O código definitivo, com testes, vem na implementação.
 
 ## 1. Princípio central: a ferramenta é do domínio, o Docker é um detalhe
@@ -394,3 +394,55 @@ ferramenta automaticamente, e as invariantes da seção 3.1 impedem que ela entr
 
 A última linha repete o princípio da ADR-003: o LLM nunca envia uma **linguagem de consulta** (shell,
 SQL, PromQL). Cada ferramenta tem a sua consulta fixa, parametrizada por valores validados.
+
+## 13. Contrato de apresentação da aprovação
+
+A resposta da API para uma aprovação **separa estruturalmente** o que vem do sistema (confiável) do que
+vem do agente (não confiável). Assim, nenhum frontend (Swagger, CLI ou o dashboard da V6) consegue
+apresentar, por engano, a justificativa do LLM como se fosse uma avaliação do sistema.
+
+```json
+{
+  "approvalId": "a1…",
+  "status": "PENDING",
+  "expiresAt": "2026-09-26T14:18:11Z",
+  "action": {
+    "tool": "restartContainer",
+    "target": "demo-api",
+    "arguments": { "service": "demo-api", "reason": "…" }
+  },
+  "system": {
+    "riskLevel": "HIGH_RISK",
+    "impact": "Restarting stops the container and starts it again. In-flight requests will fail…",
+    "evidence": [
+      { "code": "UNHEALTHY", "severity": "HIGH", "source": "getContainerStatus", "observedAt": "…" }
+    ]
+  },
+  "agentClaims": {
+    "justification": "O serviço parece estar travado: os logs mostram o pool de conexões esgotado.",
+    "trusted": false
+  }
+}
+```
+
+- `action.arguments` são os argumentos **exatos** que serão executados (e cujo hash está vinculado à
+  aprovação).
+- `system.riskLevel` e `system.impact` são **coisas diferentes**: o risco é a classificação, e o impacto
+  é a descrição determinística do que acontece. As duas vêm da definição da ferramenta.
+- `system.evidence` são os **achados determinísticos** já observados nesta execução. Eles permitem ao
+  aprovador conferir a justificativa contra fatos.
+- `agentClaims` é exibido sempre rotulado ("justificativa do agente, não verificada"), como texto puro,
+  nunca como HTML ou Markdown renderizado.
+
+Mapeamento para a tela (V6):
+
+```
+AÇÃO                          Reiniciar demo-api   (restartContainer · service=demo-api)
+RISCO                         HIGH_RISK
+IMPACTO                       Reiniciar interrompe as requisições em andamento…
+EVIDÊNCIAS DO SISTEMA         UNHEALTHY (getContainerStatus, 14:02)
+─────────────────────────────────────────────────────────────────────
+JUSTIFICATIVA DO AGENTE       "O serviço parece estar travado…"
+(não verificada)
+                              [ Aprovar ]   [ Recusar ]
+```

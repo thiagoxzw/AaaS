@@ -33,8 +33,8 @@ tentativas ficam registradas na auditoria.
 | [02 — Requisitos](docs/02-requisitos.md) | Requisitos funcionais e não funcionais, com IDs estáveis e fase |
 | [03 — Arquitetura](docs/03-arquitetura.md) | Três planos, fronteiras de confiança, componentes, cadeia de validação, autonomia, modelo de execução, idempotência e stack |
 | [04 — Modelo de dados](docs/04-modelo-de-dados.md) | Tabelas, relacionamentos, invariantes garantidas pelo banco, índices e consultas de auditoria |
-| [05 — Contratos das ferramentas](docs/05-contratos-das-ferramentas.md) | Interface `Tool`, port `ContainerRuntime`, risco, erros, catálogo do MVP e testes *(em revisão)* |
-| 06 — Threat model | *a fazer* |
+| [05 — Contratos das ferramentas](docs/05-contratos-das-ferramentas.md) | Interface `Tool`, port `ContainerRuntime`, risco, erros, catálogo do MVP, testes e contrato da aprovação |
+| [06 — Threat model](docs/06-threat-model.md) | Ativos, agentes de ameaça, STRIDE por fronteira, suíte do "LLM malicioso", riscos residuais *(em revisão)* |
 | 07 — Plano do MVP | *a fazer* |
 | [ADRs](docs/adr/README.md) | Decisões arquiteturais registradas |
 | [CONTRIBUTING](CONTRIBUTING.md) | Convenções: idioma, commits, banco |

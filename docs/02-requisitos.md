@@ -112,6 +112,14 @@ deixe a numeração fora de ordem.
 | RNF-SEG-07b | **Segredos em conteúdo de terceiros** (por exemplo, uma aplicação que imprime a própria senha no log) passam por mascaramento **best-effort**, com padrões conhecidos, antes de serem enviados ao LLM e antes de serem persistidos. Isso **não** é uma garantia, porque não dá para reconhecer todo segredo possível, e essa limitação é documentada no README. |
 | RNF-SEG-08 | Senhas com hash forte (BCrypt ou Argon2), JWT com expiração curta e chave de assinatura vinda de configuração. |
 | RNF-SEG-09 | A auditoria é *append-only*: a API não permite editar nem apagar registros. |
+| RNF-SEG-10 | Os adapters de runtime mapeiam **somente os campos do domínio**. Variáveis de ambiente, comando, mounts e labels arbitrárias nunca saem do adapter. (Origem: threat model TM-B5-03) |
+| RNF-SEG-11 | As saídas de ferramentas têm sequências ANSI e caracteres de controle removidos e caracteres invisíveis de formatação neutralizados, antes de irem ao LLM, ao banco e à tela. (TM-B5-05) |
+| RNF-SEG-12 | O docker-socket-proxy só é alcançável pelo backend (rede interna, sem porta publicada), e o CI verifica que operações proibidas retornam `403`. (TM-B6-02/03) |
+| RNF-SEG-13 | O estado e os papéis do usuário são recarregados do banco a cada requisição e a cada decisão de política. O JWT prova apenas a identidade. (TM-B1-03, TM-B2-01) |
+| RNF-SEG-14 | Um recurso de outra organização, ou sem acesso, responde `404`, não `403`. (TM-B1-04) |
+| RNF-SEG-15 | Os serviços de infraestrutura do Compose só publicam portas em `127.0.0.1`, e as credenciais padrão são sempre substituídas via `.env`. (TM-B8-05) |
+| RNF-SEG-16 | Os logs técnicos e as métricas não contêm conteúdo de mensagens, argumentos completos, saídas de ferramentas nem labels de alta cardinalidade. (TM-X-01/02) |
+| RNF-SEG-17 | O login tem limitação de tentativas e resposta idêntica para usuário inexistente e senha errada. (TM-B1-02) |
 
 ### Confiabilidade e limites do agente
 

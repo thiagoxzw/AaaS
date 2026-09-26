@@ -521,8 +521,8 @@ não depende de `integration`" (as ferramentas conhecem só o port; veja o docum
 02 — Requisitos                           ✔
 03 — Arquitetura                          ✔  (este documento)
 04 — Modelo de dados                      ✔
-05 — Contratos das ferramentas            ← em revisão
-06 — Threat model                         (ativos, atores, STRIDE por fronteira, mitigações × requisitos)
+05 — Contratos das ferramentas            ✔
+06 — Threat model                         ← em revisão
 07 — Plano do MVP                         (fatias verticais, critérios de aceite, testes por fatia)
      ↓
 Implementação incremental
