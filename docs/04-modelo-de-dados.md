@@ -270,6 +270,10 @@ Somar `llm_call` a cada volta seria desnecessário, e os contadores são atualiz
 
 ### 4.9 `tool_execution`
 
+> Implementada na fatia 2 (migração V6), com duas colunas a mais: `tool_version` e `redaction_count` (quantos
+> mascaramentos foram aplicados nos argumentos e na saída). **As FKs de `agent_execution_id` e `llm_call_id` só
+> entram na fatia 4**, quando essas tabelas existirem (critério de aceite obrigatório daquela fatia, documento 07).
+
 | Coluna | Tipo | Nulo | Notas |
 |---|---|---|---|
 | agent_execution_id | uuid | não | FK composta |
@@ -283,7 +287,7 @@ Somar `llm_call` a cada volta seria desnecessário, e os contadores são atualiz
 | arguments_hash | text | sim | SHA-256 do JSON canônico dos argumentos **validados** (usado para vincular a aprovação) |
 | rationale | text | sim | Justificativa específica, quando o LLM a fornece |
 | policy_decision | text | sim | `ALLOW`, `REQUIRE_APPROVAL`, `DENY` |
-| denial_reason | text | sim | `UNKNOWN_TOOL`, `NOT_ALLOWED_BY_AUTONOMY`, `INVALID_ARGUMENTS`, `RESOURCE_NOT_ALLOWED`, `INSUFFICIENT_PERMISSION`, `BUDGET_EXCEEDED` |
+| denial_reason | text | sim | `ENVIRONMENT_UNAVAILABLE`, `UNKNOWN_TOOL`, `NOT_ALLOWED_BY_AUTONOMY`, `INVALID_ARGUMENTS`, `RESOURCE_NOT_ALLOWED`, `INSUFFICIENT_PERMISSION`, `BUDGET_EXCEEDED`, `POLICY_ERROR` (o primeiro e o último foram acrescentados na fatia 2) |
 | status | text | não | `PROPOSED`, `DENIED`, `WAITING_APPROVAL`, `REJECTED`, `EXPIRED`, `CANCELLED`, `RUNNING`, `SUCCEEDED`, `FAILED`, `TIMED_OUT`, `OUTCOME_UNKNOWN` |
 | attempt_count | int | não | Inclui as retentativas (só para ferramentas read-only) |
 | output | jsonb | sim | Resultado estruturado, **truncado e mascarado**. Os achados do diagnóstico determinístico ficam aqui. |

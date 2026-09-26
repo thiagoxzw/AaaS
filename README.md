@@ -4,8 +4,10 @@
 > executa, pede aprovação e audita.**
 
 ⚠️ **Status: em construção.** Design aceito (documentos 01–07). Implementado até agora: **fatia 0,
-esqueleto executável** ([detalhes](docs/fatias/00-esqueleto.md)) e **fatia 1, autenticação, ambientes e
-auditoria** ([detalhes](docs/fatias/01-autenticacao-ambientes-auditoria.md)). O README completo (exemplos, screenshots,
+esqueleto executável** ([detalhes](docs/fatias/00-esqueleto.md)), **fatia 1, autenticação, ambientes e
+auditoria** ([detalhes](docs/fatias/01-autenticacao-ambientes-auditoria.md)) e **fatia 2, framework de
+ferramentas** ([detalhes](docs/fatias/02-framework-de-ferramentas.md)). Ainda não há ferramentas em produção: as
+primeiras (Docker) chegam na fatia 3. O README completo (exemplos, screenshots,
 API) será escrito conforme o sistema for construído.
 
 ## Como executar (estado atual)
