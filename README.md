@@ -87,3 +87,7 @@ tentativas ficam registradas na auditoria.
 - Toda proposta, executada ou negada, é auditada: quem, o quê, quando, por quê e com qual resultado.
 - Regras determinísticas onde elas bastam, e LLM onde ele agrega valor.
 - Tecnologias entram quando resolvem um problema real, não para parecer sofisticado.
+
+## Licença
+
+[MIT](LICENSE) © 2026 Thiago Lima
