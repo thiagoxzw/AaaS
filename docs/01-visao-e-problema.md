@@ -1,6 +1,6 @@
 # 01 — Visão, validação da ideia e definição do problema
 
-> Status: **proposta**. Ainda em validação, antes de qualquer código.
+> Status: **aceito** (2026-09-26).
 
 ## 1. Validação da ideia
 

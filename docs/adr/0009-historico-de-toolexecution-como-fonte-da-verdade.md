@@ -1,6 +1,6 @@
 # ADR-0009 — `AgentExecution` separado de `ToolExecution`; o histórico é a fonte da verdade
 
-- **Status:** Proposta
+- **Status:** Aceita
 - **Data:** 2026-09-26
 
 ## Contexto

@@ -1,6 +1,6 @@
 # ADR-0004 — Adiar Redis e RabbitMQ até existir gatilho objetivo
 
-- **Status:** Proposta
+- **Status:** Aceita
 - **Data:** 2026-09-26
 
 ## Contexto

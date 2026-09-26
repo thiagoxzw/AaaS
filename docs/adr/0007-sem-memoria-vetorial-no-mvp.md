@@ -1,6 +1,6 @@
 # ADR-0007 — Sem memória vetorial no MVP
 
-- **Status:** Proposta
+- **Status:** Aceita
 - **Data:** 2026-09-26
 
 ## Contexto

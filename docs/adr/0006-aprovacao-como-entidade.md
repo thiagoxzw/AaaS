@@ -1,6 +1,6 @@
 # ADR-0006 — Aprovação humana como entidade e máquina de estados, não como texto
 
-- **Status:** Proposta
+- **Status:** Aceita
 - **Data:** 2026-09-26
 
 ## Contexto

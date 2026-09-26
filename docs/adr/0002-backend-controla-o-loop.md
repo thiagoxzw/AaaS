@@ -1,6 +1,6 @@
 # ADR-0002 — O backend controla o loop do agente; o LLM apenas propõe
 
-- **Status:** Proposta
+- **Status:** Aceita
 - **Data:** 2026-09-26
 
 ## Contexto

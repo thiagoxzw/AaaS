@@ -1,6 +1,6 @@
 # ADR-0005 — `organization_id` em todas as tabelas de domínio desde o MVP
 
-- **Status:** Proposta
+- **Status:** Aceita
 - **Data:** 2026-09-26
 
 ## Contexto

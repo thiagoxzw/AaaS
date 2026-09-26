@@ -1,6 +1,6 @@
 # 03 — Arquitetura de alto nível
 
-> Status: **proposta**. Esta é a visão de alto nível. O detalhamento de cada parte (modelo de dados,
+> Status: **aceito** (2026-09-26). Esta é a visão de alto nível. O detalhamento de cada parte (modelo de dados,
 > contratos das ferramentas, threat model, plano do MVP) vem nos próximos documentos (seção 14).
 
 ## 1. Estilo arquitetural: monólito modular
@@ -194,7 +194,7 @@ analisado no threat model (documento 06).
 | 1 | **API Layer** ("gateway") | Expor a API REST versionada (`/api/v1`), validar a entrada (Bean Validation), traduzir erros para `application/problem+json` (RFC 9457) e publicar o OpenAPI. **Não há API Gateway separado** (Spring Cloud Gateway, Kong etc.): com um único serviço, ele seria só mais um salto de rede. | MVP | Chama os serviços de aplicação dos módulos, in-process. |
 | 2 | **Authentication** | Spring Security. No MVP o próprio backend emite o JWT (login com usuário e senha, BCrypt) e valida o token como *OAuth2 Resource Server*. Na V5 entram API keys e, opcionalmente, um IdP externo OIDC. | MVP | Filtro HTTP que popula o `SecurityContext` usado por todos os módulos. |
 | 3 | **Agent Orchestrator** | Coração do sistema. Executa o loop do agente como uma **máquina de estados persistida**, aplica os orçamentos (passos, tempo, tokens), chama o LLM, envia as propostas à cadeia de validação (seção 5.2), pausa para aprovação e produz a resposta final. **É ele quem controla o loop, não o LLM nem o framework.** Veja a [ADR-002](adr/0002-backend-controla-o-loop.md). | MVP | LLM Gateway, Context Builder, Tool Registry/Policy/Executor, Approval Service, repositórios. |
-| 4 | **LLM Gateway** | Interface (`port`) com um adaptador por provedor. Traduz o catálogo de ferramentas para o formato de tool calling do provedor, aplica timeout e retentativa (429/5xx), conta tokens, estima custo e emite métricas. Nos testes é substituído por um **LLM falso roteirizado**, inclusive um "LLM malicioso" (H1 do documento 01). | MVP | Provedor externo via HTTPS. |
+| 4 | **LLM Gateway** | Interface `LlmGateway` (*port*), com um adaptador por provedor (o primeiro é OpenAI, [ADR-010](adr/0010-llm-gateway-agnostico-de-provedor.md)). O orchestrator não sabe qual provedor está em uso. Traduz o catálogo de ferramentas para o formato de tool calling do provedor, aplica timeout e retentativa (429/5xx), conta tokens, estima custo e emite métricas. Nos testes é substituído por um **LLM falso roteirizado**, inclusive um "LLM malicioso" (H1 do documento 01). | MVP | Provedor externo via HTTPS. |
 | 5 | **Tool Registry** | Catálogo **fechado** das ferramentas. Cada ferramenta é uma classe com uma definição declarativa: nome, descrição, schema dos parâmetros, nível de risco, permissão exigida, se exige aprovação, timeout e se é idempotente. O registry fornece ao LLM **só as ferramentas permitidas** para aquele usuário, ambiente e nível de autonomia. | MVP | Orchestrator (consulta), Policy Engine. |
 | 6 | **Tool Execution Layer** | Executa uma chamada já autorizada: aplica timeout, faz retentativa só quando a ferramenta é idempotente, trunca e mascara a saída, grava o `ToolExecution` **antes** (`RUNNING`) e **depois** (`SUCCEEDED`/`FAILED`/…) da chamada externa e emite métricas. | MVP | Adapters de sistemas externos, Audit. |
 | 7 | **Policy / Permission Engine** | Decisão **determinística** (sem LLM): `ALLOW`, `REQUIRE_APPROVAL` ou `DENY` com motivo, a partir das permissões do usuário, do risco da ferramenta, do nível de autonomia do ambiente, da allowlist e do orçamento restante. É **fail-closed**: qualquer erro inesperado na avaliação vira `DENY`. | MVP | Chamado pelo Orchestrator antes de cada execução. |
@@ -477,7 +477,7 @@ com.devopsaaas
  ├── environment    ambientes, serviços permitidos (allowlist), nível de autonomia
  ├── conversation   conversas e mensagens
  ├── agent          orchestrator, context builder, AgentExecution, orçamentos
- ├── llm            port LlmClient + adapters + contabilização de tokens e custo
+ ├── llm            port LlmGateway + adapters + contabilização de tokens e custo
  ├── tool           registry, policy engine, executor, ToolExecution, aprovações
  │    └── docker    ferramentas Docker + cliente da Docker Engine API
  ├── audit          registro e consulta de auditoria
@@ -505,7 +505,7 @@ verificadas por testes de arquitetura, para que as fronteiras não se degradem c
 | ArchUnit | Testes de fronteira entre módulos | MVP | |
 | GitHub Actions | CI (build, testes, qualidade, imagem) | MVP | O CD vem na V7. |
 | Cliente da Docker Engine API | Integração Docker | MVP | Proposta: chamar a **API REST do Docker Engine** diretamente com o `RestClient` do Spring, através do proxy. É uma superfície pequena, fácil de testar com WireMock e sem dependência pesada. Alternativa: a biblioteca `docker-java`. |
-| Provedor de LLM com tool calling | IA | MVP | **Pendente da sua escolha** (seção 15). |
+| Provedor de LLM com tool calling | IA | MVP | OpenAI como primeira implementação, atrás do `LlmGateway`. O modelo fica em configuração ([ADR-010](adr/0010-llm-gateway-agnostico-de-provedor.md)). |
 | RabbitMQ | Mensageria | V2 | Seção 8. |
 | Redis | Cache, locks, rate limit | V4/V5 | Seção 8. |
 | OpenTelemetry | Tracing | V3 | |
@@ -517,7 +517,7 @@ verificadas por testes de arquitetura, para que as fronteiras não se degradem c
 01 — Visão e problema                     ✔
 02 — Requisitos                           ✔
 03 — Arquitetura                          ✔  (este documento)
-04 — Modelo de dados                      ← próximo
+04 — Modelo de dados                      ← em revisão
 05 — Contratos das ferramentas            (interface Tool, schemas, risco, erros, MVP × depois)
 06 — Threat model                         (ativos, atores, STRIDE por fronteira, mitigações × requisitos)
 07 — Plano do MVP                         (fatias verticais, critérios de aceite, testes por fatia)
@@ -542,13 +542,25 @@ antes da seguinte:
 7. restartContainer          (+ verificação pós-ação)
 ```
 
-## 15. Perguntas em aberto (decisões pendentes)
+## 15. Decisões fechadas (2026-09-26)
 
-1. **Provedor de LLM**: API comercial com tool calling ou modelo local (via Ollama, por exemplo)? Isso
-   muda custo, privacidade e qualidade do tool calling. Com modelos locais pequenos, a qualidade do tool
-   calling pode ser bem inferior. Não tenho certeza de como está hoje e precisaria testar.
-2. **Versões de Java e Spring Boot**: confirmar no momento do setup.
-3. **Onde o Docker roda** (Linux nativo, Docker Desktop no macOS/Windows ou WSL2): isso afeta o caminho
-   do socket e o proxy.
-4. **Idioma**: documentação em português e código (identificadores, commits) em inglês?
-5. **Redis e RabbitMQ fora do MVP** (ADR-004): confirmar.
+| Decisão | Escolha |
+|---|---|
+| Arquitetura | Monólito modular ([ADR-001](adr/0001-monolito-modular.md)) |
+| Persistência | PostgreSQL no MVP |
+| Redis | Fase posterior, quando houver necessidade concreta de cache, locks, rate limiting ou contexto temporário ([ADR-004](adr/0004-adiar-redis-e-rabbitmq.md)) |
+| RabbitMQ | Fase posterior, quando o processamento precisar ser desacoplado em workers ([ADR-004](adr/0004-adiar-redis-e-rabbitmq.md)) |
+| Execução assíncrona no MVP | `ExecutionDispatcher` in-process (background) + polling em `GET /executions/{id}` |
+| LLM | OpenAI inicialmente, atrás do `LlmGateway`, com um único modelo definido em configuração ([ADR-010](adr/0010-llm-gateway-agnostico-de-provedor.md)) |
+| Docker local | Windows + WSL2 + Docker Desktop |
+| Docker em CI e produção | Linux + Docker |
+| Acesso ao Docker | Nunca diretamente pelo backend; sempre via docker-socket-proxy ([ADR-003](adr/0003-sem-shell-docker-via-proxy.md)) |
+| Independência de plataforma | O backend depende **apenas do contrato HTTP do proxy** (URL em configuração). Nenhum caminho de Windows, WSL2 ou Docker Desktop entra no código. Só o `docker-compose` monta o socket, e **apenas no container do proxy**. |
+| Idioma | Documentação, ADRs, requisitos e issues em português. Código, API, banco, enums, logs técnicos, testes e commits em inglês ([CONTRIBUTING](../CONTRIBUTING.md)) |
+
+**Pendente de verificação na implementação** (depende de documentação atual):
+
+- versões de Java e Spring Boot;
+- qual API da OpenAI usar e se o adapter usa um SDK, o Spring AI (com a execução automática de
+  ferramentas desligada, conforme a ADR-002) ou um cliente HTTP próprio;
+- a configuração do proxy e o caminho do socket dentro do Docker Desktop com WSL2.

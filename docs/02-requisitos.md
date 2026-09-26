@@ -1,6 +1,6 @@
 # 02 — Requisitos
 
-> Status: **proposta**. Cada requisito tem um ID estável para ser referenciado em testes, issues e ADRs.
+> Status: **aceito** (2026-09-26). Cada requisito tem um ID estável para ser referenciado em testes, issues e ADRs.
 > A coluna **Fase** indica quando o requisito entra (MVP, V1…V7, conforme a roadmap).
 
 **Regra dos IDs:** um ID nunca é renumerado nem reutilizado. Um requisito removido continua na tabela,

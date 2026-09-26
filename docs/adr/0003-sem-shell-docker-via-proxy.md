@@ -1,6 +1,6 @@
 # ADR-0003 — Sem shell; ferramentas tipadas; Docker via proxy com allowlist
 
-- **Status:** Proposta
+- **Status:** Aceita
 - **Data:** 2026-09-26
 
 ## Contexto

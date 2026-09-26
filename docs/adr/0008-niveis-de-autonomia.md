@@ -1,6 +1,6 @@
 # ADR-0008 — Níveis de autonomia como configuração de política
 
-- **Status:** Proposta
+- **Status:** Aceita
 - **Data:** 2026-09-26
 
 ## Contexto

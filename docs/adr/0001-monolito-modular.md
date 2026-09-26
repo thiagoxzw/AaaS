@@ -1,6 +1,6 @@
 # ADR-0001 — Monólito modular em vez de microsserviços
 
-- **Status:** Proposta
+- **Status:** Aceita
 - **Data:** 2026-09-26
 
 ## Contexto
