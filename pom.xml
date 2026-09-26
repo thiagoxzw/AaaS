@@ -29,10 +29,17 @@
         <spotbugs-maven-plugin.version>4.10.4.1</spotbugs-maven-plugin.version>
         <findsecbugs.version>1.14.0</findsecbugs.version>
         <spotbugs-annotations.version>4.10.4</spotbugs-annotations.version>
+        <!-- Not managed by Spring Boot 4.1.1 -->
+        <caffeine.version>3.3.0</caffeine.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.github.ben-manes.caffeine</groupId>
+                <artifactId>caffeine</artifactId>
+                <version>${caffeine.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.github.spotbugs</groupId>
                 <artifactId>spotbugs-annotations</artifactId>

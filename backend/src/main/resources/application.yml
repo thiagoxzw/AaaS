@@ -3,6 +3,15 @@ spring:
     name: devops-agent
   # The datasource has no defaults on purpose: without SPRING_DATASOURCE_* the application fails fast
   # instead of silently connecting somewhere unexpected.
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema; Hibernate only checks that the entities match it.
+      ddl-auto: validate
+  jackson:
+    deserialization:
+      # Unknown fields are rejected instead of silently ignored (e.g. an organizationId in a body, TM-B1-05).
+      fail-on-unknown-properties: true
 
 server:
   port: 8080
@@ -28,3 +37,15 @@ logging:
   structured:
     format:
       console: ecs
+
+devops:
+  security:
+    jwt:
+      # secret: from JWT_SECRET (required, at least 32 bytes)
+      issuer: devops-agent
+      ttl: 15m
+    login:
+      max-failures-per-email: 5
+      max-failures-per-ip: 50
+      window: 15m
+  # bootstrap.admin-email / bootstrap.admin-password: from ADMIN_EMAIL / ADMIN_PASSWORD

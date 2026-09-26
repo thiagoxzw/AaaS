@@ -30,6 +30,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/devops_agent
       SPRING_DATASOURCE_USERNAME: devops_agent
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}
+      DEVOPS_SECURITY_JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (see .env.example)}
+      DEVOPS_BOOTSTRAP_ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env (see .env.example)}
+      DEVOPS_BOOTSTRAP_ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env (see .env.example)}
     depends_on:
       postgres:
         condition: service_healthy
