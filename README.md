@@ -3,9 +3,30 @@
 > **Um plano de controle seguro para agentes de operações. O LLM propõe ações, e o backend decide,
 > executa, pede aprovação e audita.**
 
-⚠️ **Status: fase de design.** Ainda não há código. Esta etapa define o problema, os requisitos e a
-arquitetura de alto nível. O README completo (como executar, exemplos, screenshots, API) será escrito
-conforme o sistema for construído.
+⚠️ **Status: em construção.** Design aceito (documentos 01–07). Implementado até agora: **fatia 0,
+esqueleto executável** ([detalhes](docs/fatias/00-esqueleto.md)). O README completo (exemplos, screenshots,
+API) será escrito conforme o sistema for construído.
+
+## Como executar (estado atual)
+
+Requisitos: Docker com Compose. Para rodar os testes: JDK 25.
+
+```bash
+cp .env.example .env          # troque as senhas; sem elas o compose não sobe
+docker compose up -d --build
+```
+
+| Serviço | Endereço |
+|---|---|
+| API | http://localhost:8080 |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000 (usuário `admin`, senha do `.env`) |
+
+O Actuator (health e métricas) fica na porta 8081, **acessível só dentro da rede do Compose**.
+
+```bash
+./mvnw verify                 # testes unitários, de integração (Testcontainers) e SpotBugs + FindSecBugs
+```
 
 ## A ideia em um diagrama
 
@@ -36,6 +57,7 @@ tentativas ficam registradas na auditoria.
 | [05 — Contratos das ferramentas](docs/05-contratos-das-ferramentas.md) | Interface `Tool`, port `ContainerRuntime`, risco, erros, catálogo do MVP, testes e contrato da aprovação |
 | [06 — Threat model](docs/06-threat-model.md) | Ativos, agentes de ameaça, STRIDE por fronteira, suíte do "LLM malicioso", riscos residuais |
 | [07 — Plano do MVP](docs/07-plano-do-mvp.md) | Fatias verticais 0–9, critérios de aceite, testes por fatia e definição de pronto |
+| [Fatias](docs/fatias/) | Desenho, testes, demonstração e divergências de cada fatia implementada |
 | [ADRs](docs/adr/README.md) | Decisões arquiteturais registradas |
 | [CONTRIBUTING](CONTRIBUTING.md) | Convenções: idioma, commits, banco |
 

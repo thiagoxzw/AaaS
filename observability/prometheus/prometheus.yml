@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: devops-agent
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # Internal management port; reachable only inside the compose network.
+      - targets: ["backend:8081"]

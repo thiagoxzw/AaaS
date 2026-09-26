@@ -1,0 +1,78 @@
+name: devops-aaas
+
+# Every published port is bound to 127.0.0.1 (RNF-SEG-15); CI enforces it with scripts/check-compose-ports.sh.
+# Secrets have no defaults: a missing .env stops the stack instead of starting it with weak credentials.
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: devops_agent
+      POSTGRES_USER: devops_agent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devops_agent -d devops_agent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks: [backend]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: devops-agent:local
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/devops_agent
+      SPRING_DATASOURCE_USERNAME: devops_agent
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (see .env.example)}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Actuator is on the internal management port, which is not published.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks: [backend]
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks: [backend]
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env (see .env.example)}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus]
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [backend]
+
+volumes:
+  postgres-data:
+  grafana-data:
+
+networks:
+  backend:

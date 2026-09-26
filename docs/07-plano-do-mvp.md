@@ -235,7 +235,7 @@ A observabilidade é construída **junto** com cada capacidade, e não numa fati
 
 | Fatia | Métricas e sinais adicionados |
 |---|---|
-| 0 | JVM, HTTP, health, logs JSON com `traceId` |
+| 0 | JVM, HTTP, health, logs JSON com `requestId` (o `traceId` do OpenTelemetry fica para a V3) |
 | 1 | Logins (sucesso e falha), negações de autorização |
 | 2 | Execuções de ferramenta por nome, status e risco, duração, negações por motivo, truncagens e mascaramentos |
 | 3 | Chamadas ao runtime por operação e resultado, erros `RUNTIME_FORBIDDEN` |
