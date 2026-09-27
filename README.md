@@ -13,8 +13,9 @@
 | [3](docs/fatias/03-docker-real.md) | Docker real através do proxy: `listContainers`, `getContainerStatus`, `getContainerLogs` |
 | [4](docs/fatias/04-agente.md) | O agente: loop controlado pelo backend, orçamentos, idempotência, cancelamento e recuperação, com um LLM **roteirizado** (`scripted`) |
 | [5](docs/fatias/05-diagnostico.md) | Diagnóstico determinístico: achados como `OOM_KILLED`, `KILLED_BY_SIGKILL` (não conclusivo), `UNHEALTHY`, calculados por regras e entregues ao LLM como fatos |
+| [6](docs/fatias/06-llm-real.md) | LLM real: adapter da OpenAI (Responses API), custo por execução e orçamento diário. O padrão continua `scripted` |
 
-O LLM real chega na fatia 6, e a aprovação humana na fatia 7. O README completo (exemplos, screenshots, API)
+A aprovação humana chega na fatia 7, e as ações com efeito (restart) na fatia 8. O README completo (exemplos, screenshots, API)
 será escrito conforme o sistema for construído.
 
 ## Como executar (estado atual)
@@ -75,6 +76,19 @@ verifiquei isso. Se o `connectivity-check` responder `reachable: false`, comece 
 ```bash
 ./mvnw verify                 # testes unitários, de integração (Testcontainers, inclusive com Docker real e o proxy) e SpotBugs + FindSecBugs
 ```
+
+## Usando um LLM real (OpenAI)
+
+O padrão é `LLM_PROVIDER=scripted`: roteiros determinísticos, sem API key e sem custo. Para usar a OpenAI,
+preencha no `.env` `LLM_PROVIDER=openai`, `OPENAI_API_KEY`, `LLM_MODEL`, os dois preços por milhão de tokens e
+`LLM_DAILY_BUDGET_USD`. Faltando qualquer um, o backend não sobe. O custo estimado de cada execução aparece em
+`GET /api/v1/executions/{id}`, e `scripts/evaluate-agent.sh` roda os cenários de falha do `demo-api` e grava o
+resultado em `evaluations/`.
+
+> ⚠️ **O conteúdo enviado ao modelo sai da sua máquina.** Isso inclui o estado dos containers da allowlist e
+> trechos de logs, já mascarados e truncados. O mascaramento de segredos de terceiros é *best-effort*
+> (RNF-SEG-07b). Os segredos do próprio sistema nunca entram no contexto. Leia os termos de uso e de retenção de
+> dados da OpenAI antes de usar com dados reais, e configure também um limite de gastos no painel do provedor.
 
 ## A ideia em um diagrama
 

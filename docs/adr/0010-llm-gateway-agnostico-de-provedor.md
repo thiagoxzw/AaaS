@@ -36,3 +36,20 @@ provedor, os testes e o raciocínio sobre segurança ficam acoplados a um fornec
 - (−) É preciso manter o mapeamento entre os tipos neutros e o formato do provedor.
 - (−) O conteúdo enviado ao LLM (incluindo logs mascarados) sai da máquina local para a OpenAI. Isso é
   documentado no README.
+
+## Decisão de implementação (fatia 6, 2026-09-27)
+
+- **Cliente HTTP próprio** (`HttpClient` do JDK), no pacote `integration.openai`, e não o SDK oficial nem o
+  Spring AI. O SDK `com.openai:openai-java-core` 4.69.3 traz Jackson 2 e Kotlin para um projeto em Jackson 3; o
+  Spring AI acrescentaria um segundo modelo de mensagens. O cliente próprio deixa visível e testável cada byte
+  enviado ao provedor (TM-B3-01).
+- **Responses API (`POST /responses`) sem estado:** `store: false`, e o histórico inteiro vai em cada chamada,
+  reconstruído dos nossos registros. Sem `previous_response_id`: o banco continua sendo a fonte da verdade.
+- **`strict: false`** nas ferramentas: a validação estrita dos argumentos é do backend (`ArgumentBinder`).
+- **Até 2 retentativas** em 429 e 5xx, respeitando `Retry-After`, dentro do timeout da chamada; 4xx sem
+  retentativa (`REJECTED`).
+- **Modelo, preços e orçamento diário sem valor padrão:** faltando qualquer um, a aplicação não sobe.
+- **Ressalva:** a documentação oficial da OpenAI não era alcançável do ambiente de desenvolvimento. O formato
+  foi lido em fontes de terceiros, fixado pelos testes com stub e **precisa ser confirmado na primeira execução
+  real** (roteiro em [docs/fatias/06-llm-real.md](../fatias/06-llm-real.md)).
+

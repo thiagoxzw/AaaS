@@ -109,11 +109,11 @@ Legenda da coluna **Ref**: RF/RNF = requisito (documento 02), ADR = decisão, Dx
 
 | ID | STRIDE | Ameaça | Mitigação | Ref | Teste |
 |---|---|---|---|---|---|
-| TM-B3-01 | I | Dados sensíveis (dados pessoais e segredos em logs) enviados ao provedor | Segredos do sistema nunca entram no contexto, **por construção**. Logs são mascarados (best-effort) e truncados. O contexto é mínimo. A limitação é documentada. *Os termos de retenção de dados do provedor precisam ser lidos por você: não tenho como garanti-los.* | RNF-SEG-07a/b, ADR-010 | `llmRequest_neverContainsConfiguredSecrets`, `llmRequest_containsMaskedLogs` |
-| TM-B3-02 | I | Vazamento da API key do LLM | Variável de ambiente, com um tipo mascarado que nunca aparece em logs. Recomendação: configurar um limite de gastos **no próprio provedor**, se ele oferecer. | RNF-SEG-04 | `logs_neverContainLlmApiKey` |
+| TM-B3-01 | I | Dados sensíveis (dados pessoais e segredos em logs) enviados ao provedor | Segredos do sistema nunca entram no contexto, **por construção**. Logs são mascarados (best-effort) e truncados. O contexto é mínimo. A limitação é documentada. *Os termos de retenção de dados do provedor precisam ser lidos por você: não tenho como garanti-los.* | RNF-SEG-07a/b, ADR-010 | `OpenAiAgentIT.theRequestsSentToTheProvider_neverContainTheSystemsSecrets`, `RealDockerIT.s9_…` (fatia 4) |
+| TM-B3-02 | I | Vazamento da API key do LLM | Variável de ambiente, com um tipo mascarado que nunca aparece em logs. Recomendação: configurar um limite de gastos **no próprio provedor**, se ele oferecer. | RNF-SEG-04 | `OpenAiLlmAdapterTest.theApiKey_neverAppearsInLogsOrErrors` |
 | TM-B3-03 | I | Vazamento do prompt de sistema | **Não é uma fronteira de segurança.** Premissa: *o prompt é público*. Ele não contém segredos nem regras de autorização, porque as regras estão no código. | ADR-002 | revisão |
-| TM-B3-04 | D | Provedor indisponível, lento ou com rate limit | Timeout, retentativas limitadas em 429/5xx e depois `FAILED` com mensagem clara. As ferramentas não ficam em estado inconsistente. | RNF-CONF-10 | `execution_fails_gracefully_whenLlmTimesOut` |
-| TM-B3-05 | D | Custo descontrolado (loop, respostas longas) | Limites por execução (iterações, tokens, tempo) e orçamento diário | RF-26, RNF-CUS-02 | `execution_endsWithBudgetExceeded_afterMaxIterations` |
+| TM-B3-04 | D | Provedor indisponível, lento ou com rate limit | Timeout, retentativas limitadas em 429/5xx e depois `FAILED` com mensagem clara. As ferramentas não ficam em estado inconsistente. | RNF-CONF-10 | `OpenAiLlmAdapterTest` (429, 5xx, 4xx, timeout), `OpenAiAgentIT.aProviderOutage_failsTheExecution_withAClearReason` |
+| TM-B3-05 | D | Custo descontrolado (loop, respostas longas) | Limites por execução (iterações, tokens, tempo) e orçamento diário | RF-26, RNF-CUS-02 | `AgentIT.s8_…` (fatia 4), `OpenAiAgentIT.anExhaustedDailyBudget_refusesNewMessages`, `…theDailyBudget_stopsARunningExecution_betweenTurns` |
 | TM-B3-06 | S/T | Interceptação da comunicação | HTTPS com o trust store padrão, sem nunca desabilitar a verificação TLS | — | revisão de configuração |
 
 ### B4 — LLM → Tool Registry (propostas)
