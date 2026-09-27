@@ -61,11 +61,12 @@ class AgentExecutionTest {
         assertThat(execution.countToolCall()).isZero();
         assertThat(execution.countToolCall()).isEqualTo(1);
         assertThat(execution.countToolCall()).as("counted even beyond the limit").isEqualTo(2);
-        execution.countLlmIteration(10, 5);
-        execution.countLlmIteration(10, 5);
-        execution.countLlmIteration(10, 5);
+        execution.countLlmIteration(10, 5, new java.math.BigDecimal("0.25"));
+        execution.countLlmIteration(10, 5, new java.math.BigDecimal("0.25"));
+        execution.countLlmIteration(10, 5, new java.math.BigDecimal("0.25"));
         assertThat(execution.llmIterationsExhausted()).isTrue();
         assertThat(execution.getInputTokens()).isEqualTo(30);
+        assertThat(execution.getEstimatedCostUsd()).isEqualByComparingTo("0.75");
         execution.addActiveTime(1_000);
         assertThat(execution.activeTimeExhausted()).isTrue();
         assertThat(execution.remainingActiveMs()).isZero();

@@ -42,11 +42,12 @@ public class ConversationService {
     private final AgentProperties properties;
     private final AuditRecorder audit;
     private final TransactionTemplate transactions;
+    private final DailyBudget dailyBudget;
 
     ConversationService(ConversationRepository conversations, MessageRepository messages,
             AgentExecutionRepository executions, EnvironmentDirectory environments, ContextBuilder context,
             ExecutionDispatcher dispatcher, LlmGateway llm, AgentProperties properties, AuditRecorder audit,
-            TransactionTemplate transactions) {
+            TransactionTemplate transactions, DailyBudget dailyBudget) {
         this.conversations = conversations;
         this.messages = messages;
         this.executions = executions;
@@ -57,6 +58,7 @@ public class ConversationService {
         this.properties = properties;
         this.audit = audit;
         this.transactions = transactions;
+        this.dailyBudget = dailyBudget;
     }
 
     /** {@code replayed}: the same Idempotency-Key and body were seen before, and nothing new was created. */
@@ -80,6 +82,11 @@ public class ConversationService {
         Optional<Accepted> replay = replay(user, idempotencyKey, requestHash);
         if (replay.isPresent()) {
             return replay.get();
+        }
+        if (dailyBudget.exhausted(user.organizationId())) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
+                    "The daily LLM budget of the organization is exhausted; it renews at midnight UTC.",
+                    Map.of(HttpHeaders.RETRY_AFTER, Long.toString(dailyBudget.secondsUntilRenewal())));
         }
         ExecutionDispatcher.Reservation reservation = dispatcher.tryReserve().orElseThrow(() -> new ApiException(
                 HttpStatus.SERVICE_UNAVAILABLE, "The agent is at capacity; try again shortly.",

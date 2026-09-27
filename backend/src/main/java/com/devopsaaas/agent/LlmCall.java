@@ -45,7 +45,7 @@ public class LlmCall {
 
     static LlmCall record(UUID organizationId, UUID agentExecutionId, int seq, String model,
             LlmCallOutcome finishReason, String assistantText, Integer inputTokens, Integer outputTokens,
-            int durationMs, String errorCode) {
+            BigDecimal estimatedCostUsd, int durationMs, String errorCode) {
         LlmCall call = new LlmCall();
         call.id = Ids.newId();
         call.organizationId = organizationId;
@@ -56,8 +56,8 @@ public class LlmCall {
         call.assistantText = assistantText;
         call.inputTokens = inputTokens;
         call.outputTokens = outputTokens;
-        // Prices arrive with the real provider (slice 6); the scripted provider costs nothing.
-        call.estimatedCostUsd = BigDecimal.ZERO;
+        // The provider's estimate from its configured price table (RNF-CUS-01); the scripted provider costs nothing.
+        call.estimatedCostUsd = estimatedCostUsd;
         call.durationMs = durationMs;
         call.errorCode = errorCode;
         call.createdAt = Timestamps.now();

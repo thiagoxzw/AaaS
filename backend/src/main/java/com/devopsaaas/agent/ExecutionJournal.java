@@ -9,6 +9,7 @@ import com.devopsaaas.shared.error.ApiException;
 import com.devopsaaas.shared.security.CurrentUser;
 import com.devopsaaas.tool.execution.ToolExecutionHistory;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,7 +38,7 @@ class ExecutionJournal {
     }
 
     record LlmCallData(String model, LlmCallOutcome outcome, String text, int inputTokens, int outputTokens,
-            int durationMs, String errorCode) {
+            BigDecimal estimatedCostUsd, int durationMs, String errorCode) {
     }
 
     private final AgentExecutionRepository executions;
@@ -120,10 +121,10 @@ class ExecutionJournal {
         return transactions.execute(status -> {
             AgentExecution execution = lock(ref);
             execution.addActiveTime(activeMillis);
-            int seq = execution.countLlmIteration(data.inputTokens(), data.outputTokens());
+            int seq = execution.countLlmIteration(data.inputTokens(), data.outputTokens(), data.estimatedCostUsd());
             LlmCall call = llmCalls.save(LlmCall.record(ref.organizationId(), ref.executionId(), seq, data.model(),
-                    data.outcome(), data.text(), data.inputTokens(), data.outputTokens(), data.durationMs(),
-                    data.errorCode()));
+                    data.outcome(), data.text(), data.inputTokens(), data.outputTokens(), data.estimatedCostUsd(),
+                    data.durationMs(), data.errorCode()));
             return new RecordedLlmCall(call.getId(), execution.getStatus() == AgentExecutionStatus.RUNNING);
         });
     }
