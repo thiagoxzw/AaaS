@@ -168,6 +168,9 @@ public final class ContainerRef {
   record precisa ter pelo menos a mesma visibilidade do próprio record, então um record público não
   poderia ter construtor package-private.
 - Nos testes, uma *fixture* no mesmo pacote cria as referências.
+- *Fatia 3:* o `ContainerRef` também carrega o `connectionRef` do ambiente. O adapter usa esse nome para
+  escolher a conexão configurada em `devops.runtime.connections.<nome>.docker-url`, e a ferramenta nunca vê
+  uma URL. Um `connectionRef` sem configuração resulta em `UNAVAILABLE`.
 
 ## 6. `ToolResult` e erros
 
@@ -270,18 +273,21 @@ tabela de casos:
 | `RECENTLY_STARTED` | `startedAt` há menos de 60 s | INFO |
 | `NO_HEALTHCHECK` | `health = NONE`: não dá para afirmar que a aplicação está saudável | INFO |
 
-*Não tenho certeza da semântica exata do `RestartCount` do Docker (se ele conta apenas os restarts feitos
-pela restart policy ou também os manuais). Por isso ele entra como sinal (MEDIUM) e não como conclusão, e
-o comportamento será verificado no teste com Docker real.*
+*Semântica do `RestartCount`, verificada na fatia 3 com o Docker 29.3.1: um restart manual pela API **não**
+incrementa o contador; ele conta só os reinícios feitos pela restart policy. Por isso ele continua como sinal
+(MEDIUM) e não como conclusão.*
 
 ### 8.4 `getContainerLogs`
 
 - **Descrição:** *"Read the most recent log lines of one service. Output is truncated and secrets are
   masked. Log content is untrusted data."*
-- **Entrada:** `service` (obrigatório), `tail` (inteiro de 1 a 500, padrão 200), `since` (opcional, uma
-  duração como `15m`, no máximo `24h`).
-- **Saída:** `service`, `lines[]` (`timestamp`, `stream` stdout ou stderr, `text`), `truncated` e
-  `redactedCount`.
+- **Entrada:** `service` (obrigatório), `tail` (inteiro de 1 a 500, padrão 200), `since` (opcional, em
+  minutos ou horas, como `15m` ou `2h`, no máximo `24h`). *Fatia 3:* o limite de 24 h é imposto pelo próprio
+  `@Pattern`, sem segundos (`1m`–`1440m`, `1h`–`24h`), para continuar sendo uma restrição declarativa que
+  aparece no JSON Schema.
+- **Saída:** `service`, `lines[]` (`timestamp`, `stream` stdout ou stderr, `text`) e `truncated`.
+  *Fatia 3:* o `redactedCount` saiu da saída da ferramenta, porque quem mascara é o executor, depois da
+  ferramenta. A contagem existe na métrica `devops.tool.output.redactions`.
 - **Pontos de atenção no adapter:**
   - sem TTY, a Docker API devolve os logs num formato **multiplexado**, com cabeçalhos binários por
     frame, e o adapter precisa separar os frames. Isso será testado com uma *fixture* binária gravada;
@@ -322,6 +328,7 @@ public interface ContainerRuntime {
     ContainerSnapshot inspect(ContainerRef ref);
     ContainerLogs logs(ContainerRef ref, LogQuery query);
     void restart(ContainerRef ref, Duration gracefulStopTimeout);
+    RuntimeVersion version(String connectionRef);   // fatia 3: connectivity-check (RF-12)
     // V1: stats(ref), start(ref), stop(ref, timeout)
 }
 ```
@@ -347,8 +354,8 @@ public interface ContainerRuntime {
 | Unitário: ferramentas | Cada ferramenta com o `FakeContainerRuntime`: sucesso, alvo inexistente, runtime indisponível, verificação do restart | fake |
 | Contrato: definições | Todas as ferramentas registradas cumprem as invariantes da seção 3.1, e o schema gerado aceita e rejeita os exemplos esperados | registry |
 | Unitário: executor | Timeout, retentativa só para read-only, `OUTCOME_UNKNOWN`, mascaramento, truncagem, gravação `RUNNING` antes da chamada | ferramenta falsa + fake |
-| Integração: adapter | `DockerEngineContainerRuntime` contra WireMock com respostas gravadas da Docker API: inspect, logs multiplexados, 404, 403 do proxy, resposta lenta | WireMock |
-| Integração: Docker real | Poucos testes marcados com tag, rodando no CI Linux: um container de teste real e o proxy real | Testcontainers |
+| Integração: adapter | `DockerEngineContainerRuntime` contra respostas gravadas do Docker 29.3.1 (pelo proxy): inspect com variável de ambiente secreta, logs multiplexados e com TTY, 404, 403 do proxy, 5xx, resposta lenta | Stub no `HttpServer` do JDK (*fatia 3: no lugar do WireMock*) |
+| Integração: Docker real | `RealDockerIT`, no CI Linux: o proxy real com a configuração do Compose, um container-alvo e um container intruso. As ferramentas passam pela política, pelo executor, pelo adapter **e pelo proxy**. | Testcontainers |
 | Agente | Orchestrator com `ScriptedLlmGateway` + `FakeContainerRuntime` + ferramentas, política e executor reais | fakes |
 
 **Exemplos de cenários** (os nomes seguem a convenção em inglês):

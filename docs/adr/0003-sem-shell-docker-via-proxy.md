@@ -1,6 +1,6 @@
 # ADR-0003 — Sem shell; ferramentas tipadas; Docker via proxy com allowlist
 
-- **Status:** Aceita
+- **Status:** Aceita. O item 4 (escolha do proxy) foi **substituído pela [ADR-0011](0011-linuxserver-socket-proxy.md)**.
 - **Data:** 2026-09-26
 
 ## Contexto
@@ -17,6 +17,9 @@ inclusive destrutiva ou induzida por prompt injection (um log malicioso, por exe
 4. O backend acessa o Docker por meio de um **proxy do socket** que libera somente os endpoints
    necessários (listar, inspecionar, ler logs e reiniciar containers). Vou confirmar a configuração exata
    do proxy escolhido na documentação dele durante a implementação.
+   *Atualização (fatia 3):* confirmei que o `tecnativa/docker-socket-proxy` não consegue liberar o restart
+   sem liberar `create` e `start`. A escolha e a configuração do proxy estão na
+   [ADR-0011](0011-linuxserver-socket-proxy.md).
 
 ## Alternativas consideradas
 - **Montar o socket direto no backend**: mais simples, porém inseguro.

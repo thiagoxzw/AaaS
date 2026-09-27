@@ -116,12 +116,13 @@ Proxy ──► Docker Engine                 só os endpoints liberados passam
 - **Proxy**: limita a superfície disponível a listar, inspecionar, ler logs e reiniciar.
 - **Docker**: só recebe operações permitidas.
 
-**Limitação honesta:** o proxy restringe **quais tipos de operação** passam (por exemplo, "restart
-sim, exec e create não"), mas pelo que conheço ele não restringe **quais containers**. A allowlist por
-container é aplicada pelo backend. Se o backend fosse comprometido, o atacante poderia reiniciar
-qualquer container, mas não criar containers privilegiados nem executar comandos dentro deles. Vou
-verificar na documentação do proxy escolhido se existe filtragem por label ou nome, e isso será
-analisado no threat model (documento 06).
+**Limitação honesta (confirmada na fatia 3):** o proxy restringe **quais tipos de operação** passam (por
+exemplo, "restart sim, exec e create não"), mas **não** restringe **quais containers**: as regras dele são
+por padrão de caminho, sem filtro por nome ou label. A allowlist por container é aplicada pelo backend e é
+uma garantia **contra o agente**, não uma barreira contra um backend comprometido. Se o backend fosse
+comprometido, o atacante poderia ler o `inspect` e os logs de qualquer container (e, a partir da fatia 8,
+reiniciá-los), mas não criar containers privilegiados nem executar comandos dentro deles. Detalhes e riscos
+residuais na [ADR-011](adr/0011-linuxserver-socket-proxy.md) e no documento 06 (TM-B6-04, TM-B6-08).
 
 ## 3. Diagrama de alto nível
 
@@ -507,7 +508,7 @@ não depende de `integration`" (as ferramentas conhecem só o port; veja o docum
 | WireMock | Simular Docker API, provedor de LLM e GitHub | MVP | |
 | ArchUnit | Testes de fronteira entre módulos | MVP | |
 | GitHub Actions | CI (build, testes, qualidade, imagem) | MVP | O CD vem na V7. |
-| Cliente da Docker Engine API | Integração Docker | MVP | Proposta: chamar a **API REST do Docker Engine** diretamente com o `RestClient` do Spring, através do proxy. É uma superfície pequena, fácil de testar com WireMock e sem dependência pesada. Alternativa: a biblioteca `docker-java`. |
+| Cliente da Docker Engine API | Integração Docker | MVP | Proposta: chamar a **API REST do Docker Engine** diretamente com o `RestClient` do Spring, através do proxy. É uma superfície pequena, fácil de testar com um stub HTTP e sem dependência pesada. Alternativa: a biblioteca `docker-java`. *Fatia 3: adotado; o stub usa o `HttpServer` do próprio JDK.* |
 | Provedor de LLM com tool calling | IA | MVP | OpenAI como primeira implementação, atrás do `LlmGateway`. O modelo fica em configuração ([ADR-010](adr/0010-llm-gateway-agnostico-de-provedor.md)). |
 | RabbitMQ | Mensageria | V2 | Seção 8. |
 | Redis | Cache, locks, rate limit | V4/V5 | Seção 8. |
