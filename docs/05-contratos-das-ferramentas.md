@@ -265,13 +265,22 @@ tabela de casos:
 |---|---|---|
 | `CONTAINER_NOT_FOUND` | Está na allowlist, mas não existe no runtime | HIGH |
 | `OOM_KILLED` | `oomKilled = true` | HIGH |
-| `KILLED_BY_SIGKILL` | `exitCode = 137` e `oomKilled = false`. É **possível** OOM ou kill externo, mas não é conclusivo. | HIGH |
-| `EXITED_WITH_ERROR` | `state = EXITED` e `exitCode ≠ 0` (exceto 137) | HIGH |
-| `UNHEALTHY` | `health = UNHEALTHY` | HIGH |
-| `RESTART_LOOP` | `state = RESTARTING` ou `restartCount ≥ N` (configurável) | MEDIUM |
-| `STOPPED` | `state = EXITED` e `exitCode = 0` | MEDIUM |
-| `RECENTLY_STARTED` | `startedAt` há menos de 60 s | INFO |
-| `NO_HEALTHCHECK` | `health = NONE`: não dá para afirmar que a aplicação está saudável | INFO |
+| `KILLED_BY_SIGKILL` | `exitCode = 137` e `oomKilled = false`. É **possível** OOM, `docker kill` ou um `docker stop` que estourou o prazo de parada: não é conclusivo, e a mensagem diz isso. | HIGH |
+| `EXITED_WITH_ERROR` | `state = EXITED` e `exitCode` diferente de 0, 137 e **143** | HIGH |
+| `UNHEALTHY` | `health = UNHEALTHY` **e `state = RUNNING`** | HIGH |
+| `RESTART_LOOP` | `state = RESTARTING` ou `restartCount ≥ N` (configurável, padrão 3) | MEDIUM |
+| `STOPPED` | `state = EXITED` e `exitCode` igual a 0 **ou 143** (SIGTERM, normalmente um `docker stop`) | MEDIUM |
+| `RECENTLY_STARTED` | `state = RUNNING` e `startedAt` há menos de 60 s (configurável) | INFO |
+| `NO_HEALTHCHECK` | `health = NONE` **e `state = RUNNING`**: não dá para afirmar que a aplicação está saudável | INFO |
+
+*Ajustes da fatia 5, verificados no Docker 29.3.1:* a JVM parada por `docker stop` sai com **143**, que viraria um
+falso `EXITED_WITH_ERROR`; um `docker stop` num processo que ignora SIGTERM sai com **137** sem `OOMKilled`; e
+um container parado **mantém o último health**, por isso `UNHEALTHY` e `NO_HEALTHCHECK` só valem com ele
+rodando. O `ExitCode` volta a 0 quando o container é iniciado de novo. Cada achado leva um `evidence` com os
+dados que o dispararam (`service`, `state`, `health`, `exitCode`, `oomKilled`, `restartCount`, `startedAt`). Em
+`listContainers`, os achados ficam numa lista única no topo da saída, com o nome lógico em `evidence.service`; o
+`CONTAINER_NOT_FOUND` só aparece ali (o `getContainerStatus` de um container inexistente continua
+`FAILED`/`TARGET_NOT_FOUND`).
 
 *Semântica do `RestartCount`, verificada na fatia 3 com o Docker 29.3.1: um restart manual pela API **não**
 incrementa o contador; ele conta só os reinícios feitos pela restart policy. Por isso ele continua como sinal

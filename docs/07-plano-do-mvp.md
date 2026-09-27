@@ -160,6 +160,11 @@ ponta com Docker real.
 | **Critérios de aceite** | RF-33 |
 | **Testes** | Tabela de casos cobrindo cada regra e as combinações ambíguas (por exemplo, `137` sem `OOMKilled` → `KILLED_BY_SIGKILL`, sem concluir que foi OOM) |
 
+**Resultado da fatia 5** ([detalhes](fatias/05-diagnostico.md)): `ContainerDiagnostics` é uma classe pura
+testada por tabela; os achados saem em `getContainerStatus` e `listContainers`, chegam ao LLM junto com o
+resultado da ferramenta (prompt `agent-system-v2`) e são contados em `devops.tool.findings`. `OOM_KILLED`,
+`KILLED_BY_SIGKILL`, `EXITED_WITH_ERROR`, `STOPPED` e `RESTART_LOOP` são provados também com containers reais.
+
 ### Fatia 6 — LLM real (OpenAI adapter)
 
 **Prova:** o `LlmGateway` isola o provedor, e o agente é útil com um modelo real, ainda só lendo.
