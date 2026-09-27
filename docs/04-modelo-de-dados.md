@@ -204,7 +204,7 @@ operacional determinístico.
 | conversation_id | uuid | não | FK composta |
 | agent_execution_id | uuid | sim | Preenchido na resposta final do agente (`ASSISTANT`) |
 | seq | int | não | Ordem na conversa. `UNIQUE(conversation_id, seq)`. |
-| role | text | não | `USER`, `ASSISTANT` |
+| role | text | não | `USER`, `ASSISTANT`. *Fatia 4:* um `CHECK` exige `agent_execution_id` em toda mensagem `ASSISTANT`. |
 | content | text | não | Tamanho máximo validado na API |
 
 **Por que só USER e ASSISTANT:** as chamadas de ferramenta e as respostas intermediárias do LLM ficam em
@@ -219,7 +219,7 @@ usa só esta tabela, o que mantém o contexto enviado ao LLM pequeno.
 | trigger_message_id | uuid | não | FK para `message` (a mensagem do usuário). Único. |
 | requested_by | uuid | não | FK `app_user`: **em nome de quem** o agente age |
 | status | text | não | `QUEUED`, `RUNNING`, `WAITING_APPROVAL`, `COMPLETED`, `FAILED`, `BUDGET_EXCEEDED`, `INTERRUPTED`, `CANCELLED` |
-| status_reason | text | sim | Por exemplo, qual limite foi atingido |
+| status_reason | text | sim | Por exemplo, qual limite foi atingido. *Fatia 4:* `MAX_TOOL_CALLS`, `MAX_LLM_ITERATIONS`, `MAX_ACTIVE_TIME`, `LLM_<categoria>` (por exemplo `LLM_RATE_LIMITED`), `LLM_EMPTY_RESPONSE`, `LLM_OUTPUT_TRUNCATED` (em `COMPLETED`: a resposta é parcial, e a API a marca com `complete: false`), `ENVIRONMENT_UNAVAILABLE`, `INTERNAL_ERROR`, `CANCELLED_BY_USER`, `BACKEND_RESTARTED` |
 | autonomy_level | text | não | **Snapshot** no início (para auditoria) |
 | llm_model | text | não | O modelo usado. Responde à pergunta "qual agente?" |
 | prompt_version | text | não | Versão do prompt de sistema (versionado no código) |
@@ -273,11 +273,12 @@ Somar `llm_call` a cada volta seria desnecessário, e os contadores são atualiz
 > Implementada na fatia 2 (migração V6), com duas colunas a mais: `tool_version` e `redaction_count` (quantos
 > mascaramentos foram aplicados nos argumentos e na saída). **As FKs de `agent_execution_id` e `llm_call_id` só
 > entram na fatia 4**, quando essas tabelas existirem (critério de aceite obrigatório daquela fatia, documento 07).
+> *Fatia 4 (migração V7):* as FKs compostas foram adicionadas e o `llm_call_id` virou `NOT NULL`.
 
 | Coluna | Tipo | Nulo | Notas |
 |---|---|---|---|
 | agent_execution_id | uuid | não | FK composta |
-| llm_call_id | uuid | sim | Qual resposta do LLM propôs a chamada. É anulável para futuras execuções disparadas por regra (`AUTOMATED`). |
+| llm_call_id | uuid | **não** (fatia 4) | Qual resposta do LLM propôs a chamada. *Fatia 4:* virou `NOT NULL`, porque toda proposta do MVP vem de uma chamada ao LLM. Se execuções disparadas por regra (`AUTOMATED`) chegarem, a coluna volta a ser anulável numa migração própria. |
 | seq | int | não | `UNIQUE(agent_execution_id, seq)` |
 | llm_tool_call_id | text | sim | ID da chamada no formato do provedor, necessário para devolver o resultado ao LLM |
 | tool_name | text | não | Nome **como proposto** (truncado), mesmo que a ferramenta não exista. **Não** é FK. |
@@ -336,7 +337,7 @@ informações que **não vêm do modelo**: ferramenta, parâmetros exatos, risco
 | on_behalf_of_user_id | uuid | sim | Quando o ator é o `AGENT`: quem pediu |
 | actor_label | text | não | Snapshot legível (por exemplo, o e-mail), para a auditoria continuar legível se o usuário mudar |
 | action | text | não | Ver a lista abaixo |
-| resource_type | text | não | `ENVIRONMENT`, `SERVICE`, `EXECUTION`, `TOOL_EXECUTION`, `APPROVAL`, `USER` |
+| resource_type | text | não | `ENVIRONMENT`, `SERVICE`, `EXECUTION`, `TOOL_EXECUTION`, `APPROVAL`, `USER`, `CONVERSATION` (fatia 4) |
 | resource_id | uuid | sim | |
 | tool_name | text | sim | Facilita filtros como "todos os restarts" |
 | agent_execution_id, tool_execution_id | uuid | sim | Correlação |

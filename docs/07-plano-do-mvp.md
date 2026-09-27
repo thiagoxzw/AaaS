@@ -143,6 +143,11 @@ LLM real.
 | **Critérios de aceite** | RF-20..27, RF-44, RF-46, RNF-CONF-01..03, 08..10, RNF-MAN-03, as invariantes 2 e 3 do documento 04. **Migração obrigatória (pendência da fatia 2):** `tool_execution.agent_execution_id` e `tool_execution.llm_call_id` são obrigatórios no domínio, mas ainda não têm FK no banco, porque `agent_execution` e `llm_call` só nascem nesta fatia. **A fatia 4 só é concluída quando uma migração adicionar as FKs compostas** `(organization_id, agent_execution_id) → agent_execution(organization_id, id)` e `(organization_id, llm_call_id) → llm_call(organization_id, id)`, com um teste de integração provando que o banco rejeita uma referência inválida. |
 | **Testes** | A primeira parte da suíte do "LLM malicioso" (documento 06 §6: S1, S2, S4, S5, S7, S8 e S9), orçamento esgotado, execução ativa duplicada → `409`, a mesma `Idempotency-Key` devolve a mesma execução, a lista de ações vem dos registros, e não do texto |
 
+**Resultado da fatia 4** ([detalhes](fatias/04-agente.md)): o loop, os orçamentos (contados **antes** da
+política), a idempotência, o cancelamento cooperativo, a recuperação na inicialização e as FKs obrigatórias da
+`tool_execution` (migração V7) estão implementados. O S4 foi adaptado (documento 06 §6), e o S9 roda de ponta a
+ponta com Docker real.
+
 ### Fatia 5 — Diagnóstico determinístico
 
 **Prova:** as regras objetivas resolvem o que não precisa de IA, e são testáveis por tabela de casos.

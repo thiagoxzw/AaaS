@@ -3,13 +3,18 @@
 > **Um plano de controle seguro para agentes de operações. O LLM propõe ações, e o backend decide,
 > executa, pede aprovação e audita.**
 
-⚠️ **Status: em construção.** Design aceito (documentos 01–07). Implementado até agora: **fatia 0,
-esqueleto executável** ([detalhes](docs/fatias/00-esqueleto.md)), **fatia 1, autenticação, ambientes e
-auditoria** ([detalhes](docs/fatias/01-autenticacao-ambientes-auditoria.md)), **fatia 2, framework de
-ferramentas** ([detalhes](docs/fatias/02-framework-de-ferramentas.md)) e **fatia 3, Docker real através do
-proxy** ([detalhes](docs/fatias/03-docker-real.md)): as ferramentas `listContainers`, `getContainerStatus` e
-`getContainerLogs` operam o Docker de verdade, só de leitura. O loop do agente (LLM) chega na fatia 4. O README
-completo (exemplos, screenshots, API) será escrito conforme o sistema for construído.
+⚠️ **Status: em construção.** Design aceito (documentos 01–07). Implementado até agora:
+
+| Fatia | O que entrega |
+|---|---|
+| [0](docs/fatias/00-esqueleto.md) | Esqueleto executável: Compose, CI, observabilidade |
+| [1](docs/fatias/01-autenticacao-ambientes-auditoria.md) | Autenticação, ambientes, allowlist e auditoria imutável |
+| [2](docs/fatias/02-framework-de-ferramentas.md) | Framework de ferramentas: registry, política, executor |
+| [3](docs/fatias/03-docker-real.md) | Docker real através do proxy: `listContainers`, `getContainerStatus`, `getContainerLogs` |
+| [4](docs/fatias/04-agente.md) | O agente: loop controlado pelo backend, orçamentos, idempotência, cancelamento e recuperação, com um LLM **roteirizado** (`scripted`) |
+
+O LLM real chega na fatia 6, e a aprovação humana na fatia 7. O README completo (exemplos, screenshots, API)
+será escrito conforme o sistema for construído.
 
 ## Como executar (estado atual)
 
@@ -38,6 +43,14 @@ curl -s -X POST localhost:8080/api/v1/environments/$ENV/connectivity-check -H "A
 curl -s localhost:8080/api/v1/environments/$ENV/services/status -H "Authorization: Bearer $TOKEN"
 curl -s "localhost:8080/api/v1/tools?environmentId=$ENV" -H "Authorization: Bearer $TOKEN"
 curl -s localhost:8080/api/v1/audit-events -H "Authorization: Bearer $TOKEN"
+
+# Perguntar ao agente (LLM_PROVIDER=scripted: roteiros determinísticos, sem API key, até a fatia 6)
+CONV=$(curl -s -X POST localhost:8080/api/v1/conversations -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d "{\"environmentId\":\"$ENV\"}" | jq -r .id)
+EXEC=$(curl -s -X POST localhost:8080/api/v1/conversations/$CONV/messages -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: my-first-question' \
+  -d '{"content":"o demo-api está de pé?"}' | jq -r .executionId)     # 202 Accepted
+curl -s localhost:8080/api/v1/executions/$EXEC -H "Authorization: Bearer $TOKEN"   # status, resposta e actions[]
 
 # Caos na demo-api (sem autenticação de propósito; só em 127.0.0.1)
 curl -s -X POST localhost:8090/chaos/unhealthy     # health DOWN
