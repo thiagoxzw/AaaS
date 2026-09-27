@@ -50,6 +50,13 @@ public final class AuditEntry {
                 resourceId);
     }
 
+    /** The system acted on its own, for example the recovery of interrupted work at startup. */
+    public static AuditEntry bySystem(UUID organizationId, AuditAction action, AuditResourceType resourceType,
+            UUID resourceId) {
+        return new AuditEntry(AuditActorType.SYSTEM, organizationId, null, "system", action, resourceType,
+                resourceId);
+    }
+
     public AuditEntry toolName(String value) {
         this.toolName = value;
         return this;

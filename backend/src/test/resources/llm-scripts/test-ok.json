@@ -1,0 +1,21 @@
+{
+  "name": "test-ok",
+  "when": "\\[OK\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "Checking demo-api.",
+      "toolCalls": [
+        {
+          "name": "getContainerStatus",
+          "arguments": {
+            "service": "demo-api"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Observed: {{lastToolResult}}"
+    }
+  ]
+}

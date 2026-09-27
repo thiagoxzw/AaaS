@@ -155,6 +155,18 @@ public class ToolExecution {
         durationMs = startedAt == null ? null : Duration.between(startedAt, finishedAt).toMillis();
     }
 
+    /** A crash interrupted the call after it may have reached the runtime: the outcome is not known. */
+    void markOutcomeUnknown(String message) {
+        finish(ToolExecutionStatus.OUTCOME_UNKNOWN, attemptCount, null, false, 0, null, message);
+    }
+
+    /** A call waiting for approval whose execution was cancelled never runs. */
+    void cancelWhileWaiting() {
+        status = ToolExecutionStatus.CANCELLED;
+        finishedAt = Timestamps.now();
+        updatedAt = finishedAt;
+    }
+
     public UUID getId() {
         return id;
     }

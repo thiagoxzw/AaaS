@@ -1,0 +1,10 @@
+{
+  "name": "test-empty",
+  "when": "\\[EMPTY\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": ""
+    }
+  ]
+}

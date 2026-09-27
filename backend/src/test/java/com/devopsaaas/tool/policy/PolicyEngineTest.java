@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.devopsaaas.environment.AutonomyLevel;
 import com.devopsaaas.environment.EnvironmentDirectory;
+import com.devopsaaas.environment.EnvironmentTier;
 import com.devopsaaas.shared.security.Permission;
 import com.devopsaaas.shared.security.PermissionLookup;
 import com.devopsaaas.tool.container.FakeContainerRuntime;
@@ -91,7 +92,7 @@ class PolicyEngineTest {
 
     private void activeEnvironment(AutonomyLevel autonomy) {
         when(environments.findActive(ORG, ENV))
-                .thenReturn(Optional.of(new EnvironmentDirectory.ActiveEnvironment(ENV, ORG, autonomy, "local")));
+                .thenReturn(Optional.of(new EnvironmentDirectory.ActiveEnvironment(ENV, ORG, "env", EnvironmentTier.DEV, autonomy, "local")));
     }
 
     private PolicyDecision evaluate(String tool, String arguments) {

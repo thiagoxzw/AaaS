@@ -53,6 +53,21 @@ devops:
     max-concurrent-executions: 16
     max-retries: 3
     initial-backoff: 200ms
+  agent:
+    # Budgets per execution (RF-26, RNF-CONF-01..03); every proposal counts, denied ones included.
+    max-tool-calls: 10
+    max-llm-iterations: 8
+    max-active-time: 5m
+    conversation-window: 10
+    # In-process dispatcher (docs/03-arquitetura.md, section 8).
+    workers: 4
+    queue-capacity: 50
+    recover-on-startup: true
+  llm:
+    # scripted: deterministic scripts from classpath:llm-scripts, no API key. The OpenAI adapter is slice 6.
+    provider: ${LLM_PROVIDER:scripted}
+    timeout: 30s
+    max-output-tokens: 1024
   runtime:
     # An environment stores only the connection name (RF-13); the URL is here. It points to the
     # docker-socket-proxy, never to the Docker socket (ADR-011).

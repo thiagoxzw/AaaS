@@ -217,8 +217,10 @@ class ContainerToolsIT extends IntegrationTest {
     }
 
     private ToolExecutionOutcome run(TestUser user, UUID environmentId, String tool, String argumentsJson) {
+        ExecutionIds fixture = executionFixture(user);
         return executor.execute(new ToolExecutionRequest(
                 new PolicyContext(user.organizationId(), environmentId, user.id(), 10),
-                Ids.newId(), null, 1, new ToolProposal(tool, argumentsJson, "call-1", "test")));
+                fixture.agentExecutionId(), fixture.llmCallId(), 1,
+                new ToolProposal(tool, argumentsJson, "call-1", "test")));
     }
 }

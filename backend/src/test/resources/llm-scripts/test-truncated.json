@@ -1,0 +1,11 @@
+{
+  "name": "test-truncated",
+  "when": "\\[TRUNCATED\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "The service looks",
+      "finishReason": "LENGTH"
+    }
+  ]
+}

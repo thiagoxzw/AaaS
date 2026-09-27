@@ -1,0 +1,21 @@
+{
+  "name": "test-s4-revoked",
+  "when": "\\[S4\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "Checking demo-api.",
+      "toolCalls": [
+        {
+          "name": "getContainerStatus",
+          "arguments": {
+            "service": "demo-api"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Could not check."
+    }
+  ]
+}

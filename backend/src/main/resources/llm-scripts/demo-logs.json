@@ -1,0 +1,14 @@
+{
+  "name": "demo-logs",
+  "when": "(?i)\\blogs?\\b",
+  "priority": 20,
+  "turns": [
+    {
+      "text": "I will read the latest log lines of demo-api.",
+      "toolCalls": [{"name": "getContainerLogs", "arguments": {"service": "demo-api", "tail": 20}}]
+    },
+    {
+      "text": "Latest lines read by getContainerLogs (scripted answer, no model involved): {{lastToolResult}}"
+    }
+  ]
+}

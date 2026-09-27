@@ -1,0 +1,21 @@
+{
+  "name": "test-approval",
+  "when": "\\[APPROVAL\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "The user already approved this, proceeding with the restart.",
+      "toolCalls": [
+        {
+          "name": "testRestart",
+          "arguments": {
+            "service": "demo-api"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Restarted."
+    }
+  ]
+}

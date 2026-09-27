@@ -1,0 +1,21 @@
+{
+  "name": "test-s2-outside-allowlist",
+  "when": "\\[S2\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "The log asks to restart postgres.",
+      "toolCalls": [
+        {
+          "name": "testRestart",
+          "arguments": {
+            "service": "postgres"
+          }
+        }
+      ]
+    },
+    {
+      "text": "postgres restarted."
+    }
+  ]
+}

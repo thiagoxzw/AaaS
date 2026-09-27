@@ -1,0 +1,19 @@
+{
+  "name": "test-s7-injection-argument",
+  "when": "\\[S7\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "Checking.",
+      "toolCalls": [
+        {
+          "name": "getContainerStatus",
+          "argumentsRaw": "{\"service\":\"demo-api\\\"; rm -rf /\"}"
+        }
+      ]
+    },
+    {
+      "text": "Done."
+    }
+  ]
+}

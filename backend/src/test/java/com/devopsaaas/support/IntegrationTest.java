@@ -3,6 +3,7 @@ package com.devopsaaas.support;
 import com.devopsaaas.identity.JwtTokenService;
 import com.devopsaaas.identity.Role;
 import com.devopsaaas.shared.id.Ids;
+import com.devopsaaas.llm.TestLlmConfiguration;
 import com.devopsaaas.tool.testing.TestToolsConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -47,9 +48,11 @@ import tools.jackson.databind.json.JsonMapper;
                 "management.server.port=0",
                 "devops.security.jwt.secret=" + IntegrationTest.JWT_SECRET,
                 "devops.bootstrap.admin-email=" + IntegrationTest.BOOTSTRAP_EMAIL,
-                "devops.bootstrap.admin-password=" + IntegrationTest.BOOTSTRAP_PASSWORD
+                "devops.bootstrap.admin-password=" + IntegrationTest.BOOTSTRAP_PASSWORD,
+                // Tests share one database; the recovery is exercised explicitly (AgentRecoveryIT).
+                "devops.agent.recover-on-startup=false"
         })
-@Import(TestToolsConfiguration.class)
+@Import({TestToolsConfiguration.class, TestLlmConfiguration.class})
 public abstract class IntegrationTest {
 
     public static final String JWT_SECRET = "integration-test-secret-with-more-than-32-bytes";
@@ -121,6 +124,52 @@ public abstract class IntegrationTest {
 
     protected TestUser createAdmin(UUID organizationId) {
         return createUser(organizationId, Role.ADMIN);
+    }
+
+    /** Ids of a real execution and LLM call, so tool calls written by tests satisfy the foreign keys. */
+    public record ExecutionIds(UUID agentExecutionId, UUID llmCallId) {
+    }
+
+    /**
+     * A finished execution with one LLM call, written directly: tests of the tool framework need the parent
+     * rows that the foreign keys of {@code tool_execution} require, without running the agent. It lives in its
+     * own environment: the tool call under test may target any environment, even one of another organization.
+     */
+    protected ExecutionIds executionFixture(TestUser user) {
+        UUID environmentId = Ids.newId();
+        UUID conversation = Ids.newId();
+        UUID message = Ids.newId();
+        UUID execution = Ids.newId();
+        UUID llmCall = Ids.newId();
+        java.sql.Timestamp now = java.sql.Timestamp.from(Instant.now());
+        jdbc.update("""
+                INSERT INTO environment (id, organization_id, name, type, tier, autonomy_level, connection_ref, status,
+                                         created_by, created_at, updated_at, version)
+                VALUES (?, ?, ?, 'DOCKER', 'DEV', 'ASSISTED', 'local', 'ACTIVE', ?, ?, ?, 0)
+                """, environmentId, user.organizationId(), uniqueName("fixture"), user.id(), now, now);
+        jdbc.update("""
+                INSERT INTO conversation (id, organization_id, environment_id, created_by, status, created_at,
+                                          updated_at, version)
+                VALUES (?, ?, ?, ?, 'OPEN', ?, ?, 0)
+                """, conversation, user.organizationId(), environmentId, user.id(), now, now);
+        jdbc.update("""
+                INSERT INTO message (id, organization_id, conversation_id, seq, role, content, created_at)
+                VALUES (?, ?, ?, 1, 'USER', 'fixture', ?)
+                """, message, user.organizationId(), conversation, now);
+        jdbc.update("""
+                INSERT INTO agent_execution (id, organization_id, conversation_id, trigger_message_id, requested_by,
+                    status, autonomy_level, llm_model, prompt_version, context_snapshot, max_tool_calls,
+                    max_llm_iterations, max_active_ms, tool_call_count, llm_iteration_count, active_ms,
+                    input_tokens, output_tokens, estimated_cost_usd, created_at, updated_at, version)
+                VALUES (?, ?, ?, ?, ?, 'COMPLETED', 'ASSISTED', 'fixture', 'fixture', '{}'::jsonb, 10, 8, 300000,
+                    0, 1, 0, 0, 0, 0, ?, ?, 0)
+                """, execution, user.organizationId(), conversation, message, user.id(), now, now);
+        jdbc.update("""
+                INSERT INTO llm_call (id, organization_id, agent_execution_id, seq, model, finish_reason, duration_ms,
+                    created_at)
+                VALUES (?, ?, ?, 1, 'fixture', 'TOOL_CALLS', 0, ?)
+                """, llmCall, user.organizationId(), execution, now);
+        return new ExecutionIds(execution, llmCall);
     }
 
     protected static String uniqueName(String prefix) {

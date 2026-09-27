@@ -1,0 +1,14 @@
+{
+  "name": "demo-status",
+  "when": "(?i)(de p[eé]|est[aá] (up|rodando|funcionando)|status|is .* up)",
+  "priority": 10,
+  "turns": [
+    {
+      "text": "I will check the state of demo-api.",
+      "toolCalls": [{"name": "getContainerStatus", "arguments": {"service": "demo-api"}}]
+    },
+    {
+      "text": "State observed by getContainerStatus (scripted answer, no model involved): {{lastToolResult}}"
+    }
+  ]
+}
