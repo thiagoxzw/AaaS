@@ -68,6 +68,10 @@ devops:
     provider: ${LLM_PROVIDER:scripted}
     timeout: 30s
     max-output-tokens: 1024
+  diagnostics:
+    # Deterministic container findings (docs/05-contratos-das-ferramentas.md, section 8.3).
+    restart-loop-threshold: 3
+    recently-started-window: 60s
   runtime:
     # An environment stores only the connection name (RF-13); the URL is here. It points to the
     # docker-socket-proxy, never to the Docker socket (ADR-011).

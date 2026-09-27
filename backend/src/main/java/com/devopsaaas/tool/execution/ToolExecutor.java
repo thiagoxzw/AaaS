@@ -1,6 +1,7 @@
 package com.devopsaaas.tool.execution;
 
 import com.devopsaaas.shared.observability.RequestIdFilter;
+import com.devopsaaas.tool.api.Finding;
 import com.devopsaaas.tool.api.RiskLevel;
 import com.devopsaaas.tool.api.Tool;
 import com.devopsaaas.tool.api.ToolDefinition;
@@ -17,6 +18,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -184,6 +186,7 @@ public class ToolExecutor {
                 OutputProcessor.Processed output =
                         processor.processOutput(success.data(), success.findings(), definition.maxOutputBytes());
                 countOutput(definition.name(), output);
+                countFindings(definition.name(), success.findings());
                 yield journal.finished(request, started.getId(), ToolExecutionStatus.SUCCEEDED, attempts, output,
                         null, null);
             }
@@ -255,6 +258,14 @@ public class ToolExecutor {
         return new ToolExecutionOutcome(execution.getId(), execution.getStatus(), execution.getDenialReason(),
                 execution.getErrorMessage(), execution.getOutput(), execution.isOutputTruncated(),
                 execution.getErrorCode(), execution.getAttemptCount());
+    }
+
+    /** Codes come from the code base, never from runtime data, so the label cardinality stays bounded. */
+    private void countFindings(String toolName, List<Finding> findings) {
+        for (Finding finding : findings) {
+            meters.counter("devops.tool.findings", "tool", toolName, "code", finding.code(),
+                    "severity", finding.severity().name()).increment();
+        }
     }
 
     private void countOutput(String toolName, OutputProcessor.Processed output) {

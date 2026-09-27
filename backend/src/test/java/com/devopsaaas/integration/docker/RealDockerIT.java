@@ -1,6 +1,7 @@
 package com.devopsaaas.integration.docker;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.devopsaaas.identity.Role;
 import com.devopsaaas.shared.id.Ids;
@@ -20,7 +21,10 @@ import com.devopsaaas.tool.policy.DenialReason;
 import com.devopsaaas.tool.policy.PolicyContext;
 import com.devopsaaas.tool.policy.ToolProposal;
 import com.devopsaaas.tool.testing.TestToolsConfiguration;
+import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.model.Capability;
+import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.RestartPolicy;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -33,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,6 +48,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -342,6 +348,72 @@ class RealDockerIT extends AgentTestSupport {
         assertThat(compose).contains("image: " + PROXY_IMAGE)
                 .contains("ALLOW_RESTARTS: \"0\"", "POST: \"0\"", "EVENTS: \"0\"", "CONTAINERS: \"1\"",
                         "ALLOW_LOGS: \"1\"");
+    }
+
+    // ---- slice 5: deterministic findings on real containers ---------------------------------------------
+
+    /**
+     * The findings that matter most, produced by the real Docker Engine and read through the proxy: a kernel
+     * OOM kill, a plain SIGKILL (the ambiguous 137), an error exit, a SIGTERM stop and a restart loop.
+     */
+    @Test
+    void realContainers_produceTheExpectedFindings() {
+        DockerClient docker = DockerClientFactory.instance().client();
+        long sixteenMegabytes = 16L * 1024 * 1024;
+        Map<String, String> cases = new LinkedHashMap<>();
+        try {
+            cases.put("oom-case", start(docker, "oom", HostConfig.newHostConfig().withMemory(sixteenMegabytes)
+                    .withMemorySwap(sixteenMegabytes), "sh", "-c", "tail /dev/zero"));
+            cases.put("sigkill-case", start(docker, "sigkill", HostConfig.newHostConfig(), "sleep", "300"));
+            cases.put("error-case", start(docker, "error", HostConfig.newHostConfig(), "sh", "-c", "exit 3"));
+            cases.put("sigterm-case", start(docker, "sigterm", HostConfig.newHostConfig(),
+                    "sh", "-c", "trap 'exit 143' TERM; sleep 300 & wait"));
+            cases.put("loop-case", start(docker, "loop", HostConfig.newHostConfig()
+                    .withRestartPolicy(RestartPolicy.onFailureRestart(50)), "sh", "-c", "sleep 1; exit 1"));
+
+            docker.killContainerCmd(cases.get("sigkill-case")).exec();
+            await().atMost(Duration.ofSeconds(10)).until(() -> running(docker, cases.get("sigterm-case")));
+            docker.stopContainerCmd(cases.get("sigterm-case")).withTimeout(10).exec();
+            for (String service : List.of("oom-case", "sigkill-case", "error-case", "sigterm-case")) {
+                await().atMost(Duration.ofSeconds(30)).until(() -> !running(docker, cases.get(service)));
+            }
+            await().atMost(Duration.ofSeconds(60)).until(() -> restartCount(docker, cases.get("loop-case")) >= 3);
+            cases.forEach((service, container) -> allowlistService(admin, environment.toString(), service, container));
+
+            assertThat(findingCodes("oom-case")).containsExactly("OOM_KILLED");
+            assertThat(findingCodes("sigkill-case")).containsExactly("KILLED_BY_SIGKILL");
+            assertThat(findingCodes("error-case")).containsExactly("EXITED_WITH_ERROR");
+            assertThat(findingCodes("sigterm-case")).containsExactly("STOPPED");
+            assertThat(findingCodes("loop-case")).contains("RESTART_LOOP");
+        } finally {
+            cases.values().forEach(container -> docker.removeContainerCmd(container).withForce(true).exec());
+        }
+    }
+
+    private List<String> findingCodes(String service) {
+        ToolExecutionOutcome outcome = run("getContainerStatus", "{\"service\":\"" + service + "\"}");
+        assertThat(outcome.status()).as(service).isEqualTo(ToolExecutionStatus.SUCCEEDED);
+        return json.readTree(outcome.output()).get("findings").valueStream()
+                .map(finding -> finding.get("code").asString()).toList();
+    }
+
+    private static String start(DockerClient docker, String kind, HostConfig hostConfig, String... command) {
+        String id = docker.createContainerCmd(TARGET_IMAGE)
+                .withName("devops-it-" + kind + "-" + SUFFIX)
+                .withHostConfig(hostConfig)
+                .withCmd(command)
+                .exec().getId();
+        docker.startContainerCmd(id).exec();
+        return id;
+    }
+
+    private static boolean running(DockerClient docker, String id) {
+        return Boolean.TRUE.equals(docker.inspectContainerCmd(id).exec().getState().getRunning());
+    }
+
+    private static int restartCount(DockerClient docker, String id) {
+        Integer count = docker.inspectContainerCmd(id).exec().getRestartCount();
+        return count == null ? 0 : count;
     }
 
     // ---- helpers ----------------------------------------------------------------------------------------

@@ -41,6 +41,9 @@ class ContainerToolsIT extends IntegrationTest {
     @Autowired
     FakeContainerRuntime runtime;
 
+    @Autowired
+    io.micrometer.core.instrument.MeterRegistry meters;
+
     private TestUser admin;
     private TestUser operator;
     private UUID environment;
@@ -158,6 +161,47 @@ class ContainerToolsIT extends IntegrationTest {
             assertThat(outcome.denialReason()).as(service).isEqualTo(DenialReason.INVALID_ARGUMENTS);
         }
         assertThat(runtime.calls()).noneMatch(call -> call.contains("postgres") || call.contains("proxy"));
+    }
+
+    // ---- findings (slice 5) -------------------------------------------------------------------------------
+
+    @Test
+    void getContainerStatus_returnsTheDeterministicFindings_withTheirEvidence_andCountsThem() {
+        Instant started = Instant.parse("2026-09-26T10:00:00Z");
+        runtime.setSnapshot(demoApiContainer, new ContainerSnapshot(demoApiContainer, ContainerState.EXITED,
+                HealthStatus.NONE, 137, false, 0, started, started.plusSeconds(60), "demo-api:local"));
+        double before = findingsCounted("getContainerStatus", "KILLED_BY_SIGKILL");
+
+        ToolExecutionOutcome outcome = run(operator, "getContainerStatus", "{\"service\":\"demo-api\"}");
+
+        JsonNode findings = json.readTree(outcome.output()).get("findings");
+        assertThat(findings.size()).isEqualTo(1);
+        assertThat(findings.get(0).get("code").asString()).isEqualTo("KILLED_BY_SIGKILL");
+        assertThat(findings.get(0).get("severity").asString()).isEqualTo("HIGH");
+        assertThat(findings.get(0).get("message").asString()).contains("not conclusive");
+        assertThat(findings.get(0).get("evidence").get("exitCode").asString()).isEqualTo("137");
+        assertThat(findings.get(0).get("evidence").get("service").asString()).isEqualTo("demo-api");
+        assertThat(outcome.output()).doesNotContain(demoApiContainer);
+        assertThat(findingsCounted("getContainerStatus", "KILLED_BY_SIGKILL")).isEqualTo(before + 1);
+    }
+
+    @Test
+    void listContainers_listsFindingsOnce_withTheServiceName_includingMissingContainers() {
+        runtime.remove(workerContainer);
+        runtime.setState(demoApiContainer, ContainerState.RUNNING, HealthStatus.UNHEALTHY);
+
+        ToolExecutionOutcome outcome = run(operator, "listContainers", "{}");
+
+        JsonNode findings = json.readTree(outcome.output()).get("findings");
+        assertThat(findings.valueStream().map(finding -> finding.get("evidence").get("service").asString()
+                + ":" + finding.get("code").asString()))
+                .contains("demo-api:UNHEALTHY", "worker:CONTAINER_NOT_FOUND");
+    }
+
+    private double findingsCounted(String tool, String code) {
+        io.micrometer.core.instrument.Counter counter = meters.find("devops.tool.findings").tag("tool", tool)
+                .tag("code", code).counter();
+        return counter == null ? 0 : counter.count();
     }
 
     // ---- getContainerLogs -------------------------------------------------------------------------------
