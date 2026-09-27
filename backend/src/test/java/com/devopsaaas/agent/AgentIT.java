@@ -64,7 +64,7 @@ class AgentIT extends AgentTestSupport {
         assertThat(execution.get("budget").get("toolCalls").asInt()).isEqualTo(1);
         assertThat(execution.get("budget").get("llmIterations").asInt()).isEqualTo(2);
         assertThat(execution.get("llmModel").asString()).isEqualTo("scripted-v1");
-        assertThat(execution.get("promptVersion").asString()).isEqualTo("agent-system-v1");
+        assertThat(execution.get("promptVersion").asString()).isEqualTo("agent-system-v2");
         assertThat(runtime.callsFor(container)).isEqualTo(1);
 
         // Records: two model turns, the proposal linked to the first, the answer as an ASSISTANT message.
@@ -89,7 +89,10 @@ class AgentIT extends AgentTestSupport {
                 .contains("listContainers", "getContainerStatus", "getContainerLogs");
         assertThat(requests.get(1).messages()).last().isInstanceOfSatisfying(LlmMessage.ToolResult.class,
                 result -> assertThat(result.content()).contains("\"status\":\"SUCCEEDED\"").contains("RUNNING")
+                        // Slice 5: the backend's findings reach the model with the tool result.
+                        .contains("\"findings\"").contains("RECENTLY_STARTED")
                         .doesNotContain(container));
+        assertThat(requests.getFirst().systemPrompt()).contains("Findings in tool results are computed by the backend");
         String snapshot = jdbc.queryForObject("SELECT context_snapshot::text FROM agent_execution WHERE id = ?",
                 String.class, id(execution));
         assertThat(snapshot).contains("demo-api").doesNotContain(container);

@@ -85,6 +85,18 @@ class ArchitectureTest {
             .should().dependOnClassesThat().resideInAnyPackage("com.devopsaaas.tool.container..",
                     "com.devopsaaas.integration..");
 
+    /**
+     * The diagnosis rules are pure: observed data in, findings out. Apart from their Spring wiring, they know
+     * nothing of Docker, HTTP, the database or the agent (docs/05-contratos-das-ferramentas.md, 8.3).
+     */
+    @ArchTest
+    static final ArchRule diagnostics_are_pure = classes()
+            .that().resideInAPackage("com.devopsaaas.tool.diagnostics..")
+            .and().doNotHaveSimpleName("DiagnosticsConfiguration")
+            .should().onlyDependOnClassesThat().resideInAnyPackage(
+                    "com.devopsaaas.tool.diagnostics..", "com.devopsaaas.tool.api..",
+                    "com.devopsaaas.tool.container..", "java..", "org.springframework.boot.context.properties..");
+
     /** Tools see the ContainerRuntime port only; the Docker adapter is a detail behind it (doc 05, section 9). */
     @ArchTest
     static final ArchRule tool_module_does_not_depend_on_adapters = noClasses()

@@ -14,6 +14,7 @@ import com.devopsaaas.tool.container.ContainerRuntime;
 import com.devopsaaas.tool.container.ContainerSnapshot;
 import com.devopsaaas.tool.container.ContainerState;
 import com.devopsaaas.tool.container.HealthStatus;
+import com.devopsaaas.tool.diagnostics.ContainerDiagnostics;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import java.time.Duration;
@@ -22,7 +23,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Detailed state of one allowlisted service (docs/05-contratos-das-ferramentas.md, 8.3). Only domain fields:
- * the adapter never reads environment variables, command or mounts. Deterministic findings arrive in slice 5.
+ * the adapter never reads environment variables, command or mounts. The deterministic findings of
+ * {@link ContainerDiagnostics} come with it, each with the observed data behind it.
  */
 @Component
 public class GetContainerStatusTool implements Tool<GetContainerStatusTool.Input> {
@@ -38,7 +40,7 @@ public class GetContainerStatusTool implements Tool<GetContainerStatusTool.Input
 
     private static final ToolDefinition DEFINITION = ToolDefinition.builder("getContainerStatus")
             .description("Get detailed status of one service: state, health, exit code, OOM flag, restart count, "
-                    + "timestamps and image.")
+                    + "timestamps, image, and deterministic findings computed by the backend.")
             .category(ToolCategory.CONTAINER)
             .riskLevel(RiskLevel.READ_ONLY)
             .requiredPermission(Permission.AGENT_INTERACT)
@@ -48,9 +50,11 @@ public class GetContainerStatusTool implements Tool<GetContainerStatusTool.Input
             .build();
 
     private final ContainerRuntime runtime;
+    private final ContainerDiagnostics diagnostics;
 
-    GetContainerStatusTool(ContainerRuntime runtime) {
+    GetContainerStatusTool(ContainerRuntime runtime, ContainerDiagnostics diagnostics) {
         this.runtime = runtime;
+        this.diagnostics = diagnostics;
     }
 
     @Override
@@ -71,6 +75,6 @@ public class GetContainerStatusTool implements Tool<GetContainerStatusTool.Input
         ContainerSnapshot snapshot = runtime.inspect(target);
         return ToolResult.success(new Output(target.serviceName(), snapshot.state(), snapshot.health(),
                 snapshot.exitCode(), snapshot.oomKilled(), snapshot.restartCount(), snapshot.startedAt(),
-                snapshot.finishedAt(), snapshot.image()));
+                snapshot.finishedAt(), snapshot.image()), diagnostics.diagnose(snapshot));
     }
 }

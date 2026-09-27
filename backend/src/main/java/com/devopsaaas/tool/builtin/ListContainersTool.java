@@ -1,6 +1,7 @@
 package com.devopsaaas.tool.builtin;
 
 import com.devopsaaas.shared.security.Permission;
+import com.devopsaaas.tool.api.Finding;
 import com.devopsaaas.tool.api.RiskLevel;
 import com.devopsaaas.tool.api.Tool;
 import com.devopsaaas.tool.api.ToolCategory;
@@ -15,6 +16,7 @@ import com.devopsaaas.tool.container.ContainerState;
 import com.devopsaaas.tool.container.HealthStatus;
 import com.devopsaaas.tool.container.TargetResolver;
 import com.devopsaaas.tool.container.TargetResolver.AllowlistedTarget;
+import com.devopsaaas.tool.diagnostics.ContainerDiagnostics;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,7 +25,8 @@ import org.springframework.stereotype.Component;
 /**
  * Services of the current environment with their state (docs/05-contratos-das-ferramentas.md, 8.2). The
  * runtime is asked about the allowlisted containers only, by exact name: a container outside the allowlist
- * can never appear here, even if it runs on the same host.
+ * can never appear here, even if it runs on the same host. Findings are listed once, at the top, each with the
+ * logical service name in its evidence; a service whose container does not exist is CONTAINER_NOT_FOUND.
  */
 @Component
 public class ListContainersTool implements Tool<ListContainersTool.Input> {
@@ -54,10 +57,12 @@ public class ListContainersTool implements Tool<ListContainersTool.Input> {
 
     private final ContainerRuntime runtime;
     private final TargetResolver targets;
+    private final ContainerDiagnostics diagnostics;
 
-    ListContainersTool(ContainerRuntime runtime, TargetResolver targets) {
+    ListContainersTool(ContainerRuntime runtime, TargetResolver targets, ContainerDiagnostics diagnostics) {
         this.runtime = runtime;
         this.targets = targets;
+        this.diagnostics = diagnostics;
     }
 
     @Override
@@ -79,11 +84,13 @@ public class ListContainersTool implements Tool<ListContainersTool.Input> {
         List<ContainerRef> refs = allowlist.stream().map(AllowlistedTarget::ref).toList();
         List<ContainerSnapshot> snapshots = runtime.list(refs);
         List<ServiceView> services = new ArrayList<>(allowlist.size());
+        List<Finding> findings = new ArrayList<>();
         for (int i = 0; i < allowlist.size(); i++) {
             ContainerSnapshot snapshot = snapshots.get(i);
             services.add(new ServiceView(allowlist.get(i).ref().serviceName(), allowlist.get(i).description(),
                     snapshot.state(), snapshot.health(), snapshot.restartCount()));
+            findings.addAll(diagnostics.diagnose(snapshot));
         }
-        return ToolResult.success(new Output(services));
+        return ToolResult.success(new Output(services), findings);
     }
 }

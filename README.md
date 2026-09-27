@@ -12,6 +12,7 @@
 | [2](docs/fatias/02-framework-de-ferramentas.md) | Framework de ferramentas: registry, política, executor |
 | [3](docs/fatias/03-docker-real.md) | Docker real através do proxy: `listContainers`, `getContainerStatus`, `getContainerLogs` |
 | [4](docs/fatias/04-agente.md) | O agente: loop controlado pelo backend, orçamentos, idempotência, cancelamento e recuperação, com um LLM **roteirizado** (`scripted`) |
+| [5](docs/fatias/05-diagnostico.md) | Diagnóstico determinístico: achados como `OOM_KILLED`, `KILLED_BY_SIGKILL` (não conclusivo), `UNHEALTHY`, calculados por regras e entregues ao LLM como fatos |
 
 O LLM real chega na fatia 6, e a aprovação humana na fatia 7. O README completo (exemplos, screenshots, API)
 será escrito conforme o sistema for construído.
