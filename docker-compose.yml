@@ -35,8 +35,14 @@ services:
       DEVOPS_SECURITY_JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (see .env.example)}
       DEVOPS_BOOTSTRAP_ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env (see .env.example)}
       DEVOPS_BOOTSTRAP_ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env (see .env.example)}
-      # scripted until slice 6: the agent runs locally without an API key.
+      # scripted (default): deterministic scripts, no API key. openai: the real model (slice 6), which needs the
+      # key, the model, both prices and a daily budget, or the backend refuses to start.
       LLM_PROVIDER: ${LLM_PROVIDER:-scripted}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_PRICE_INPUT_PER_MTOK_USD: ${LLM_PRICE_INPUT_PER_MTOK_USD:-}
+      LLM_PRICE_OUTPUT_PER_MTOK_USD: ${LLM_PRICE_OUTPUT_PER_MTOK_USD:-}
+      LLM_DAILY_BUDGET_USD: ${LLM_DAILY_BUDGET_USD:-}
     depends_on:
       postgres:
         condition: service_healthy

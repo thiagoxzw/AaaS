@@ -177,6 +177,12 @@ resultado da ferramenta (prompt `agent-system-v2`) e são contados em `devops.to
 | **Critérios de aceite** | ADR-010, RNF-CUS-01/02, TM-B3-01/02/04/05, e a primeira medição de H2 (sem meta ainda) |
 | **Testes** | O adapter contra WireMock (tradução de formatos, tool calls, 429/5xx, timeout), a API key nunca aparece em logs, a requisição ao LLM nunca contém os segredos configurados. **Nenhum teste automatizado chama a OpenAI de verdade**: a avaliação com o modelo real é manual ou num job separado e opcional. |
 
+**Resultado da fatia 6** ([detalhes](fatias/06-llm-real.md)): `OpenAiLlmAdapter` com cliente HTTP próprio
+sobre a Responses API sem estado, custo por chamada e por execução, orçamento diário (429 ao aceitar,
+`BUDGET_EXCEEDED`/`DAILY_BUDGET` entre voltas) e `scripts/evaluate-agent.sh` para a primeira medição de H2. A
+documentação oficial da OpenAI não era alcançável do ambiente de desenvolvimento: **a demonstração com o modelo
+real e a medição de H2 ficam para a máquina do autor**.
+
 ### Fatia 7 — Aprovação
 
 **Prova:** a aprovação humana é uma máquina de estados estruturada, segura contra replay, TOCTOU e

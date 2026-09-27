@@ -64,10 +64,19 @@ devops:
     queue-capacity: 50
     recover-on-startup: true
   llm:
-    # scripted: deterministic scripts from classpath:llm-scripts, no API key. The OpenAI adapter is slice 6.
+    # scripted: deterministic scripts from classpath:llm-scripts, no API key.
+    # openai: the Responses API (slice 6); needs the key, the model, the prices and a daily budget.
     provider: ${LLM_PROVIDER:scripted}
     timeout: 30s
     max-output-tokens: 1024
+    daily-budget-usd: ${LLM_DAILY_BUDGET_USD:}
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      model: ${LLM_MODEL:}
+      input-price-per-million-usd: ${LLM_PRICE_INPUT_PER_MTOK_USD:}
+      output-price-per-million-usd: ${LLM_PRICE_OUTPUT_PER_MTOK_USD:}
+      max-retries: 2
+      max-retry-after: 10s
   diagnostics:
     # Deterministic container findings (docs/05-contratos-das-ferramentas.md, section 8.3).
     restart-loop-threshold: 3

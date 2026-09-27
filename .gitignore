@@ -4,3 +4,6 @@ target/
 *.iml
 .vscode/
 .DS_Store
+
+# Resultados locais de scripts/evaluate-agent.sh (respostas do modelo; não versionar sem revisar)
+evaluations/

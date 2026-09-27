@@ -575,6 +575,7 @@ antes da seguinte:
 **Pendente de verificação na implementação** (depende de documentação atual):
 
 - versões de Java e Spring Boot;
-- qual API da OpenAI usar e se o adapter usa um SDK, o Spring AI (com a execução automática de
-  ferramentas desligada, conforme a ADR-002) ou um cliente HTTP próprio;
+- ~~qual API da OpenAI usar e se o adapter usa um SDK, o Spring AI (com a execução automática de
+  ferramentas desligada, conforme a ADR-002) ou um cliente HTTP próprio~~ *decidido na fatia 6: cliente HTTP
+  próprio sobre a Responses API, sem estado (ADR-010);*
 - a configuração do proxy e o caminho do socket dentro do Docker Desktop com WSL2.

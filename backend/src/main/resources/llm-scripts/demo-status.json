@@ -1,6 +1,6 @@
 {
   "name": "demo-status",
-  "when": "(?i)(de p[eé]|est[aá] (up|rodando|funcionando)|status|is .* up)",
+  "when": "(?i)(de p[eé]|est[aá] (up|rodando|funcionando)|status|is .* up|fora do ar|is .* down)",
   "priority": 10,
   "turns": [
     {

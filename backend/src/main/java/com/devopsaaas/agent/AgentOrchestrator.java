@@ -19,6 +19,7 @@ import com.devopsaaas.tool.policy.PolicyContext;
 import com.devopsaaas.tool.policy.ToolProposal;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -49,15 +50,17 @@ class AgentOrchestrator {
     private final LlmGateway llm;
     private final ToolExecutor tools;
     private final PermissionLookup permissions;
+    private final DailyBudget dailyBudget;
     private final MeterRegistry meters;
 
     AgentOrchestrator(ExecutionJournal journal, LlmRequestFactory requests, LlmGateway llm, ToolExecutor tools,
-            PermissionLookup permissions, MeterRegistry meters) {
+            PermissionLookup permissions, DailyBudget dailyBudget, MeterRegistry meters) {
         this.journal = journal;
         this.requests = requests;
         this.llm = llm;
         this.tools = tools;
         this.permissions = permissions;
+        this.dailyBudget = dailyBudget;
         this.meters = meters;
     }
 
@@ -82,6 +85,10 @@ class AgentOrchestrator {
         ExecutionRef ref = state.ref();
         while (true) {
             if (journal.checkpoint(ref, clock.lap()) == Checkpoint.STOPPED) {
+                return;
+            }
+            if (dailyBudget.exhausted(state.organizationId())) {
+                journal.finish(ref, AgentExecutionStatus.BUDGET_EXCEEDED, "DAILY_BUDGET");
                 return;
             }
             Duration remaining = Duration.ofMillis(journal.remainingActiveMs(ref));
@@ -173,11 +180,12 @@ class AgentOrchestrator {
 
     private LlmCallData callData(LlmResponse response, LlmException failure, int durationMs) {
         if (failure != null) {
-            return new LlmCallData(llm.model(), LlmCallOutcome.ERROR, null, 0, 0, durationMs,
+            return new LlmCallData(llm.model(), LlmCallOutcome.ERROR, null, 0, 0, BigDecimal.ZERO, durationMs,
                     failure.category().name());
         }
         return new LlmCallData(llm.model(), LlmCallOutcome.valueOf(response.finishReason().name()), response.text(),
-                response.usage().inputTokens(), response.usage().outputTokens(), durationMs, null);
+                response.usage().inputTokens(), response.usage().outputTokens(), response.estimatedCostUsd(),
+                durationMs, null);
     }
 
     private void meterLlmCall(LlmResponse response, LlmException failure, int durationMs) {
@@ -189,6 +197,8 @@ class AgentOrchestrator {
                     .increment(response.usage().inputTokens());
             meters.counter("devops.llm.tokens", "provider", llm.provider(), "direction", "output")
                     .increment(response.usage().outputTokens());
+            meters.counter("devops.llm.cost.usd", "provider", llm.provider())
+                    .increment(response.estimatedCostUsd().doubleValue());
         }
     }
 

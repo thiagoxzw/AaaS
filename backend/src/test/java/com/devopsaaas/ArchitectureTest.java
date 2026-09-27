@@ -119,6 +119,18 @@ class ArchitectureTest {
                     // build-time only: justified SpotBugs suppressions
                     "edu.umd.cs.findbugs.annotations..");
 
+    /**
+     * The OpenAI adapter implements the LLM port and nothing else: it cannot see tools, the policy, the database
+     * or the agent, so whatever the model answers, it can only be translated back into a proposal.
+     */
+    @ArchTest
+    static final ArchRule openai_adapter_only_knows_the_llm_port = classes()
+            .that().resideInAPackage("com.devopsaaas.integration.openai..")
+            .should().onlyDependOnClassesThat().resideInAnyPackage(
+                    "com.devopsaaas.integration.openai..", "com.devopsaaas.llm", "java..", "tools.jackson..",
+                    "io.micrometer.core..", "org.springframework.boot.context.properties..",
+                    "org.springframework.boot.autoconfigure.condition..", "org.springframework.context.annotation..");
+
     /** Only the Docker adapter talks HTTP to the outside; nothing else in the backend opens a raw HTTP client. */
     @ArchTest
     static final ArchRule only_adapters_use_http_clients = noClasses()

@@ -59,7 +59,7 @@ public class AgentExecution {
     private long activeMs;
     private long inputTokens;
     private long outputTokens;
-    private BigDecimal estimatedCostUsd;
+    private BigDecimal estimatedCostUsd = BigDecimal.ZERO;
     private String idempotencyKey;
     private String idempotencyRequestHash;
     private Instant createdAt;
@@ -116,10 +116,11 @@ public class AgentExecution {
     }
 
     /** Returns the sequence number of the new LLM call. */
-    int countLlmIteration(int input, int output) {
+    int countLlmIteration(int input, int output, BigDecimal cost) {
         llmIterationCount++;
         inputTokens += input;
         outputTokens += output;
+        estimatedCostUsd = estimatedCostUsd.add(cost);
         updatedAt = Timestamps.now();
         return llmIterationCount;
     }

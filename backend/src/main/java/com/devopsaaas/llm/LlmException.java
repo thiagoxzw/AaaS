@@ -9,7 +9,9 @@ public class LlmException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
     public enum Category {
-        TIMEOUT, RATE_LIMITED, UNAVAILABLE, INVALID_RESPONSE
+        TIMEOUT, RATE_LIMITED, UNAVAILABLE, INVALID_RESPONSE,
+        /** The provider refused the request itself (bad credentials, invalid request): retrying cannot help. */
+        REJECTED
     }
 
     private final Category category;

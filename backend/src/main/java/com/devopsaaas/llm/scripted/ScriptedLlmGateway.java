@@ -8,6 +8,7 @@ import com.devopsaaas.llm.LlmRequest;
 import com.devopsaaas.llm.LlmResponse;
 import com.devopsaaas.llm.LlmToolCall;
 import com.devopsaaas.llm.LlmUsage;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -72,7 +73,7 @@ public class ScriptedLlmGateway implements LlmGateway {
         String text = turn.text() == null ? null : turn.text().replace(LAST_TOOL_RESULT, lastToolResult(sinceUser));
         LlmFinishReason finishReason = turn.finishReason() != null ? turn.finishReason()
                 : calls.isEmpty() ? LlmFinishReason.STOP : LlmFinishReason.TOOL_CALLS;
-        return new LlmResponse(text, calls, finishReason, LlmUsage.NONE);
+        return new LlmResponse(text, calls, finishReason, LlmUsage.NONE, BigDecimal.ZERO);
     }
 
     private static LlmScript.Turn turn(LlmScript script, int index) {
