@@ -6,6 +6,7 @@ WORKDIR /workspace
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 COPY backend/pom.xml backend/
+COPY demo-api/pom.xml demo-api/
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -ntp -q -pl backend -am dependency:go-offline
 COPY backend/src backend/src
 # Tests and static analysis run in CI (mvnw verify); the image build only packages.

@@ -2,6 +2,8 @@ name: devops-aaas
 
 # Every published port is bound to 127.0.0.1 (RNF-SEG-15); CI enforces it with scripts/check-compose-ports.sh.
 # Secrets have no defaults: a missing .env stops the stack instead of starting it with weak credentials.
+# Only docker-socket-proxy mounts the Docker socket, and it publishes no port (ADR-011); CI enforces both with
+# scripts/check-compose-docker-socket.sh.
 
 services:
   postgres:
@@ -45,7 +47,50 @@ services:
       start_period: 30s
     ports:
       - "127.0.0.1:8080:8080"
-    networks: [backend]
+    # docker-proxy: the only way to the Docker Engine, through the proxy (ADR-011).
+    networks: [backend, docker-proxy]
+
+  # The backend's only path to Docker. It allows reading containers and their logs; creating, starting,
+  # executing into, deleting containers, images, volumes, networks and events are refused with 403.
+  # Restart stays off until slice 8, which brings the tool that needs it (least privilege per slice).
+  docker-socket-proxy:
+    image: linuxserver/socket-proxy:3.4.5@sha256:ca6c0301a652232d02cb0ff9f1c5d20d9b339f391e1c1dffaae6ef3bfc59d009
+    environment:
+      CONTAINERS: "1"
+      ALLOW_LOGS: "1"
+      ALLOW_RESTARTS: "0"
+      POST: "0"
+      EVENTS: "0"
+      PING: "1"
+      VERSION: "1"
+      DISABLE_IPV6: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs: [/run, /tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # No ports: reachable only from the internal docker-proxy network.
+    networks: [docker-proxy]
+
+  # The service the agent operates in the demo. Its chaos endpoints have no authentication on purpose, so the
+  # port is published on 127.0.0.1 only. It needs no network of the platform: the agent reaches it only
+  # through the Docker API.
+  demo-api:
+    build:
+      context: .
+      dockerfile: demo-api/Dockerfile
+    image: devops-demo-api:local
+    container_name: devops-demo-api
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    ports:
+      - "127.0.0.1:8090:8080"
+    networks: [demo]
 
   prometheus:
     image: prom/prometheus:v3.15.0
@@ -79,3 +124,7 @@ volumes:
 
 networks:
   backend:
+  # internal: no route outside Docker, and nothing on it can be reached from the host.
+  docker-proxy:
+    internal: true
+  demo:

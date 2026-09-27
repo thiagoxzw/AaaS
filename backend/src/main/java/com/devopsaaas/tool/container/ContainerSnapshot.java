@@ -16,4 +16,10 @@ public record ContainerSnapshot(
         Instant startedAt,
         Instant finishedAt,
         String image) {
+
+    /** An allowlisted service whose container does not exist in the runtime. */
+    public static ContainerSnapshot notFound(String serviceName) {
+        return new ContainerSnapshot(serviceName, ContainerState.NOT_FOUND, HealthStatus.NONE, null, false, 0, null,
+                null, null);
+    }
 }

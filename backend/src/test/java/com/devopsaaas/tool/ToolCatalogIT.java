@@ -28,6 +28,24 @@ class ToolCatalogIT extends IntegrationTest {
     }
 
     @Test
+    void productionCatalog_offersTheThreeReadOnlyContainerTools_withoutApproval() {
+        TestUser admin = createAdmin(DEFAULT_ORGANIZATION);
+        String environment = createEnvironment(admin, uniqueName("production")).get("id").asString();
+
+        JsonNode tools = read(get("/api/v1/tools?environmentId=" + environment,
+                createUser(DEFAULT_ORGANIZATION, Role.OPERATOR).token()));
+
+        for (String name : List.of("listContainers", "getContainerStatus", "getContainerLogs")) {
+            JsonNode tool = find(tools, name);
+            assertThat(tool.get("riskLevel").asString()).isEqualTo("READ_ONLY");
+            assertThat(tool.get("requiresApproval").asBoolean()).isFalse();
+        }
+        JsonNode logs = find(tools, "getContainerLogs").get("inputSchema");
+        assertThat(logs.get("required").toString()).isEqualTo("[\"service\"]");
+        assertThat(logs.get("properties").get("tail").get("maximum").asInt()).isEqualTo(500);
+    }
+
+    @Test
     void inputSchema_isPublishedFromTheInputRecord() {
         TestUser admin = createAdmin(DEFAULT_ORGANIZATION);
         String environment = createEnvironment(admin, uniqueName("schema")).get("id").asString();
@@ -42,7 +60,7 @@ class ToolCatalogIT extends IntegrationTest {
     }
 
     @Test
-    void viewer_seesNoTool_becauseEveryTestToolNeedsAgentPermissions() {
+    void viewer_seesNoTool_becauseEveryToolNeedsAgentPermissions() {
         TestUser admin = createAdmin(DEFAULT_ORGANIZATION);
         String environment = createEnvironment(admin, uniqueName("viewer")).get("id").asString();
 

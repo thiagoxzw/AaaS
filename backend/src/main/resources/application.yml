@@ -53,3 +53,16 @@ devops:
     max-concurrent-executions: 16
     max-retries: 3
     initial-backoff: 200ms
+  runtime:
+    # An environment stores only the connection name (RF-13); the URL is here. It points to the
+    # docker-socket-proxy, never to the Docker socket (ADR-011).
+    connections:
+      local:
+        docker-url: ${DEVOPS_RUNTIME_LOCAL_DOCKER_URL:http://docker-socket-proxy:2375}
+    docker:
+      api-version: "1.44"
+      # Below every tool's timeout (10 s and 15 s), so the HTTP call ends before the executor gives up.
+      connect-timeout: 2s
+      read-timeout: 8s
+      max-response-bytes: 1048576
+      max-line-length: 2000

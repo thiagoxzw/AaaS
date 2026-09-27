@@ -55,15 +55,45 @@ class ArchitectureTest {
 
     /**
      * Tools are thin (docs/05-contratos-das-ferramentas.md, 2.1): persistence, auditing and HTTP belong to the
-     * executor and to adapters. Empty until the first production tool arrives in slice 3.
+     * executor and to adapters.
      */
     @ArchTest
     static final ArchRule tools_do_not_touch_persistence_or_http = noClasses()
             .that().implement(Tool.class)
             .should().dependOnClassesThat().resideInAnyPackage(
                     "jakarta.persistence..", "org.springframework.jdbc..", "org.springframework.data..",
-                    "org.springframework.web.client..", "java.net.http..", "com.devopsaaas.audit..")
-            .allowEmptyShould(true);
+                    "org.springframework.web.client..", "java.net.http..", "com.devopsaaas.audit..",
+                    "com.devopsaaas.integration..");
+
+    /** Tools see the ContainerRuntime port only; the Docker adapter is a detail behind it (doc 05, section 9). */
+    @ArchTest
+    static final ArchRule tool_module_does_not_depend_on_adapters = noClasses()
+            .that().resideInAPackage("com.devopsaaas.tool..")
+            .should().dependOnClassesThat().resideInAPackage("com.devopsaaas.integration..");
+
+    /**
+     * The adapter implements the port and nothing else: it cannot reach the policy, the executor, the
+     * allowlist or the database, so it has no way to pick a target on its own.
+     */
+    @ArchTest
+    static final ArchRule docker_adapter_only_knows_the_port = classes()
+            .that().resideInAPackage("com.devopsaaas.integration.docker..")
+            .should().onlyDependOnClassesThat().resideInAnyPackage(
+                    "com.devopsaaas.integration.docker..", "com.devopsaaas.tool.container..", "java..",
+                    "jakarta.annotation..", "org.springframework.boot.context.properties..",
+                    "org.springframework.http..", "org.springframework.web.client..", "org.springframework.web.util..",
+                    "org.springframework.stereotype..", "tools.jackson..", "com.fasterxml.jackson.annotation..",
+                    "io.micrometer.core..", "org.slf4j..",
+                    // build-time only: justified SpotBugs suppressions
+                    "edu.umd.cs.findbugs.annotations..");
+
+    /** Only the Docker adapter talks HTTP to the outside; nothing else in the backend opens a raw HTTP client. */
+    @ArchTest
+    static final ArchRule only_adapters_use_http_clients = noClasses()
+            .that().resideOutsideOfPackage("com.devopsaaas.integration..")
+            .should().dependOnClassesThat().resideInAnyPackage("java.net.http..")
+            .orShould().dependOnClassesThat().haveFullyQualifiedName(
+                    "org.springframework.web.client.RestClient");
 
     /**
      * Repositories extend the bare Repository interface, so an unscoped findById/findAll cannot be called by

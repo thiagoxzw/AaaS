@@ -35,6 +35,8 @@ jobs:
             backend/target/failsafe-reports/
             backend/target/site/jacoco/
             backend/target/spotbugsXml.xml
+            demo-api/target/surefire-reports/
+            demo-api/target/spotbugsXml.xml
           if-no-files-found: ignore
 
   compose-check:
@@ -46,6 +48,8 @@ jobs:
       - run: docker compose config --quiet
       # RNF-SEG-15: nothing may be published outside 127.0.0.1.
       - run: ./scripts/check-compose-ports.sh
+      # ADR-011: only the proxy mounts the Docker socket, read-only, without ports, POST=0, internal network.
+      - run: ./scripts/check-compose-docker-socket.sh
 
   secret-scan:
     name: Secret scan
@@ -64,3 +68,4 @@ jobs:
       - uses: actions/checkout@v7
       # Build only; publishing to a registry comes with the MVP closing slice (docs/07-plano-do-mvp.md).
       - run: docker build --file backend/Dockerfile --tag devops-agent:ci .
+      - run: docker build --file demo-api/Dockerfile --tag devops-demo-api:ci .
