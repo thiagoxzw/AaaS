@@ -3,3 +3,5 @@
 mvnw text eol=lf
 *.sh text eol=lf
 *.cmd text eol=crlf
+# Recorded Docker API responses: byte-exact fixtures (the TTY log keeps its CRLF).
+*.bin binary

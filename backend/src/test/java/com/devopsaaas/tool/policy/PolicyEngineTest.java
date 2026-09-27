@@ -91,7 +91,7 @@ class PolicyEngineTest {
 
     private void activeEnvironment(AutonomyLevel autonomy) {
         when(environments.findActive(ORG, ENV))
-                .thenReturn(Optional.of(new EnvironmentDirectory.ActiveEnvironment(ENV, ORG, autonomy)));
+                .thenReturn(Optional.of(new EnvironmentDirectory.ActiveEnvironment(ENV, ORG, autonomy, "local")));
     }
 
     private PolicyDecision evaluate(String tool, String arguments) {

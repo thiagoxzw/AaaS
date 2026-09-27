@@ -156,7 +156,7 @@ User → Role → PermissionResolver (matriz centralizada) → Permission → Po
 | type | text | não | `DOCKER` (outros tipos em fases futuras) |
 | tier | text | não | `DEV`, `STAGING`, `PROD` |
 | autonomy_level | text | não | `OBSERVE_ONLY`, `ASSISTED`, `AUTOMATED`. A aplicação rejeita `AUTOMATED` no MVP. |
-| connection_ref | text | não | **Nome lógico** de uma conexão definida em configuração (por exemplo, `local` → `DOCKER_PROXY_URL`). **Nunca** uma URL com credencial nem um segredo (RF-13). |
+| connection_ref | text | não | **Nome lógico** de uma conexão definida em configuração (por exemplo, `local` → `devops.runtime.connections.local.docker-url`, que aponta para o docker-socket-proxy). **Nunca** uma URL com credencial nem um segredo (RF-13). |
 | status | text | não | `ACTIVE`, `DISABLED` |
 | created_by | uuid | não | FK `app_user` |
 | updated_at, version | | não | |

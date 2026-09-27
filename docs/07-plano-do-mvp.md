@@ -121,6 +121,15 @@ linha controlada no log, para os cenários de prompt injection). *Provocar um `O
 pode ser difícil, porque ela tende a lançar `OutOfMemoryError` antes de o kernel matar o processo. Vou
 testar; se não for confiável, esse cenário fica só nos testes com o fake.*
 
+**Resultado da fatia 3** ([detalhes](fatias/03-docker-real.md)):
+- proxy trocado para o `linuxserver/socket-proxy` ([ADR-011](adr/0011-linuxserver-socket-proxy.md)), porque o
+  `tecnativa/docker-socket-proxy` não libera o restart sem liberar `create` e `start`;
+- o proxy **não** filtra por nome nem por label (TM-B6-04 confirmado como risco residual);
+- o `RestartCount` não conta restarts manuais;
+- os logs sem TTY chegam multiplexados (`application/vnd.docker.multiplexed-stream`), e com TTY em texto puro;
+- o `/chaos/oom` sai com código 3 e `OOMKilled=false`: o `OOMKilled` real fica só nos testes com o fake;
+- o Docker Desktop com WSL2 ainda precisa ser conferido na máquina do usuário.
+
 ### Fatia 4 — Agente + ScriptedLlmGateway
 
 **Prova:** o loop do agente é controlado pelo backend, limitado, persistido, idempotente e testável sem
@@ -178,7 +187,7 @@ auditoria.
 
 | | |
 |---|---|
-| **Entra** | `restartContainer` (documento 05 §8.5), com a verificação determinística pós-ação, o `impactDescription`, o `reason` obrigatório, o endpoint de restart liberado no proxy e as consultas de auditoria por recurso (RF-45) |
+| **Entra** | `restartContainer` (documento 05 §8.5), com a verificação determinística pós-ação, o `impactDescription`, o `reason` obrigatório, o endpoint de restart liberado no proxy (`ALLOW_RESTARTS=1`, que também libera `stop` e `kill`: risco residual da ADR-011) e as consultas de auditoria por recurso (RF-45) |
 | **Demonstração** | **O roteiro do documento 01 §5, completo**, com a OpenAI **e** com o provedor `scripted` |
 | **Critérios de aceite** | RF-32, RF-45, RF-46, os critérios do roteiro do documento 01 §5 e H3 |
 | **Testes** | Restart sem retentativa, `OUTCOME_UNKNOWN` quando a conexão cai após o pedido, verificação `UNHEALTHY` sem `FAILED`, e um teste de ponta a ponta com o fake + scripted + aprovação. O proxy real permite o restart e continua bloqueando `exec`/`create`. |

@@ -8,17 +8,22 @@ import java.util.UUID;
  * creates references, and only from an ENABLED allowlist entry of an ACTIVE environment. A tool therefore
  * cannot address a container outside the allowlist, not even by mistake (docs/05-contratos-das-ferramentas.md,
  * section 5). It is a final class and not a record because a public record cannot hide its constructor.
+ *
+ * <p>It also carries the environment's {@code connectionRef}, so an adapter knows which configured runtime to
+ * call without the tool ever seeing a URL.
  */
 public final class ContainerRef {
 
     private final UUID serviceId;
     private final String serviceName;
     private final String containerName;
+    private final String connectionRef;
 
-    ContainerRef(UUID serviceId, String serviceName, String containerName) {
+    ContainerRef(UUID serviceId, String serviceName, String containerName, String connectionRef) {
         this.serviceId = Objects.requireNonNull(serviceId);
         this.serviceName = Objects.requireNonNull(serviceName);
         this.containerName = Objects.requireNonNull(containerName);
+        this.connectionRef = Objects.requireNonNull(connectionRef);
     }
 
     public UUID serviceId() {
@@ -33,6 +38,11 @@ public final class ContainerRef {
     /** The real container name. Known to the backend only; never sent to the LLM. */
     public String containerName() {
         return containerName;
+    }
+
+    /** Logical name of the runtime connection of the service's environment, for example {@code local}. */
+    public String connectionRef() {
+        return connectionRef;
     }
 
     @Override
