@@ -65,6 +65,26 @@ class ArchitectureTest {
                     "org.springframework.web.client..", "java.net.http..", "com.devopsaaas.audit..",
                     "com.devopsaaas.integration..");
 
+    /** The LLM port knows nothing of agents, tools or the domain: it only translates (ADR-0010). */
+    @ArchTest
+    static final ArchRule llm_module_is_independent = noClasses()
+            .that().resideInAPackage("com.devopsaaas.llm..")
+            .should().dependOnClassesThat().resideInAnyPackage("com.devopsaaas.agent..", "com.devopsaaas.tool..",
+                    "com.devopsaaas.environment..", "com.devopsaaas.audit..", "com.devopsaaas.integration..");
+
+    /** The agent sits on top: tools, environments and the LLM never depend on it. */
+    @ArchTest
+    static final ArchRule nothing_depends_on_the_agent = noClasses()
+            .that().resideOutsideOfPackage("com.devopsaaas.agent..")
+            .should().dependOnClassesThat().resideInAPackage("com.devopsaaas.agent..");
+
+    /** The agent reaches runtimes only through tools and their policy, never through the port or an adapter. */
+    @ArchTest
+    static final ArchRule agent_does_not_call_runtimes_directly = noClasses()
+            .that().resideInAPackage("com.devopsaaas.agent..")
+            .should().dependOnClassesThat().resideInAnyPackage("com.devopsaaas.tool.container..",
+                    "com.devopsaaas.integration..");
+
     /** Tools see the ContainerRuntime port only; the Docker adapter is a detail behind it (doc 05, section 9). */
     @ArchTest
     static final ArchRule tool_module_does_not_depend_on_adapters = noClasses()

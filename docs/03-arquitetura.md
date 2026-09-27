@@ -265,6 +265,16 @@ semânticas (allowlist, permissão). Não dá para checar a allowlist sem antes 
 Toda negação é **auditada**, o que é útil também para detectar tentativas de prompt injection (ver RF-49
 e o H1 do documento 01).
 
+**Orçamento de chamadas (fatia 4):** o orchestrator **conta cada proposta antes** de entregá-la a esta
+cadeia, qualquer que seja a decisão. Uma proposta inválida ou negada gasta orçamento como qualquer outra, então
+um LLM que produz milhares de propostas inválidas esgota o limite em vez de rodar para sempre. A primeira
+proposta além do limite ainda é registrada (e negada); as demais daquela mesma resposta do LLM são descartadas
+sem virar registro, e a execução termina `BUDGET_EXCEEDED` (`MAX_TOOL_CALLS`).
+
+```
+LLM propõe ─► orchestrator conta a proposta ─► cadeia de validação (1..7) ─► DENY | WAITING_APPROVAL | executa
+```
+
 ### 5.3 Níveis de autonomia (risco × autonomia)
 
 O nível de autonomia é **configuração de segurança do ambiente, não decisão do LLM** (ver a

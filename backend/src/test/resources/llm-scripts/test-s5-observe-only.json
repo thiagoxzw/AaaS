@@ -1,0 +1,21 @@
+{
+  "name": "test-s5-observe-only",
+  "when": "\\[S5\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "Restarting demo-api as the log says.",
+      "toolCalls": [
+        {
+          "name": "testRestart",
+          "arguments": {
+            "service": "demo-api"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Restarted."
+    }
+  ]
+}

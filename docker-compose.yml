@@ -35,6 +35,8 @@ services:
       DEVOPS_SECURITY_JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (see .env.example)}
       DEVOPS_BOOTSTRAP_ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env (see .env.example)}
       DEVOPS_BOOTSTRAP_ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env (see .env.example)}
+      # scripted until slice 6: the agent runs locally without an API key.
+      LLM_PROVIDER: ${LLM_PROVIDER:-scripted}
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,19 @@
+{
+  "name": "test-s8-iterations",
+  "when": "\\[S8-ITER\\]",
+  "priority": 100,
+  "repeatLastTurn": true,
+  "turns": [
+    {
+      "text": "Trying again.",
+      "toolCalls": [
+        {
+          "name": "deleteContainer",
+          "arguments": {
+            "service": "demo-api"
+          }
+        }
+      ]
+    }
+  ]
+}

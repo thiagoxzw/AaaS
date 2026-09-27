@@ -1,0 +1,10 @@
+{
+  "name": "test-llm-failure",
+  "when": "\\[LLM-FAIL\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "error": "RATE_LIMITED"
+    }
+  ]
+}

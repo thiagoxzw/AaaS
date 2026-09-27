@@ -1,7 +1,9 @@
 package com.devopsaaas.environment;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,8 +24,8 @@ public class EnvironmentDirectory {
     }
 
     /** {@code connectionRef} names a runtime connection defined in configuration, never a URL (RF-13). */
-    public record ActiveEnvironment(UUID id, UUID organizationId, AutonomyLevel autonomyLevel,
-            String connectionRef) {
+    public record ActiveEnvironment(UUID id, UUID organizationId, String name, EnvironmentTier tier,
+            AutonomyLevel autonomyLevel, String connectionRef) {
     }
 
     public record EnabledService(UUID id, UUID environmentId, String name, String containerName,
@@ -35,7 +37,8 @@ public class EnvironmentDirectory {
         return environments.findByIdAndOrganizationId(environmentId, organizationId)
                 .filter(environment -> environment.getStatus() == EnvironmentStatus.ACTIVE)
                 .map(environment -> new ActiveEnvironment(environment.getId(), environment.getOrganizationId(),
-                        environment.getAutonomyLevel(), environment.getConnectionRef()));
+                        environment.getName(), environment.getTier(), environment.getAutonomyLevel(),
+                        environment.getConnectionRef()));
     }
 
     @Transactional(readOnly = true)
@@ -57,6 +60,17 @@ public class EnvironmentDirectory {
                         .map(service -> enabled(service, environment))
                         .toList())
                 .orElse(List.of());
+    }
+
+    /**
+     * Logical names of every service of the environment, enabled or not, by id: to show past actions whose
+     * target was disabled later. Never the container names.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, String> serviceNames(UUID organizationId, UUID environmentId) {
+        return services.findAllByEnvironmentIdAndOrganizationIdOrderByNameAsc(environmentId, organizationId)
+                .stream()
+                .collect(Collectors.toMap(AllowlistedService::getId, AllowlistedService::getName));
     }
 
     private static EnabledService enabled(AllowlistedService service, ActiveEnvironment environment) {

@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.devopsaaas.identity.Role;
 import com.devopsaaas.shared.id.Ids;
-import com.devopsaaas.support.IntegrationTest;
+import com.devopsaaas.llm.InterceptingLlmGateway;
+import com.devopsaaas.llm.LlmMessage;
+import com.devopsaaas.llm.LlmRequest;
+import com.devopsaaas.support.AgentTestSupport;
 import com.devopsaaas.tool.container.ContainerRef;
 import com.devopsaaas.tool.container.ContainerRuntime;
 import com.devopsaaas.tool.container.ContainerRuntimeException;
@@ -55,7 +58,7 @@ import tools.jackson.databind.JsonNode;
  * intruder's inspect), and the allowlist, enforced by the backend, limits which containers the agent may use.
  */
 @TestPropertySource(properties = TestToolsConfiguration.REAL_RUNTIME_PROPERTY + "=true")
-class RealDockerIT extends IntegrationTest {
+class RealDockerIT extends AgentTestSupport {
 
     /** Same image and digest as docker-compose.yml; {@link #theProxyHereIsTheOneFromCompose()} keeps them equal. */
     static final String PROXY_IMAGE = "linuxserver/socket-proxy:3.4.5"
@@ -134,6 +137,9 @@ class RealDockerIT extends IntegrationTest {
 
     @Autowired
     ContainerRuntime runtime;
+
+    @Autowired
+    InterceptingLlmGateway llm;
 
     private TestUser admin;
     private TestUser operator;
@@ -214,6 +220,35 @@ class RealDockerIT extends IntegrationTest {
             assertThat(outcome.output()).doesNotContain(leaked);
             assertThat(stored).doesNotContain(leaked);
         }
+    }
+
+    /**
+     * S9 end to end (docs/06-threat-model.md, section 6): the agent inspects a real container whose environment
+     * holds a secret. Two different boundaries are checked: what is stored ({@code tool_execution.output}) and
+     * what is sent to the model.
+     */
+    @Test
+    void s9_theAgentInspectsARealContainer_andTheSecretReachesNeitherTheDatabaseNorTheModel() {
+        String marker = "[S9] " + uniqueName("env");
+        JsonNode execution = ask(operator, conversation(operator, environment.toString()), marker + " inspect it");
+
+        assertThat(execution.get("status").asString()).isEqualTo("COMPLETED");
+        assertThat(actions(execution)).singleElement()
+                .satisfies(action -> assertThat(action.get("status").asString()).isEqualTo("SUCCEEDED"));
+        String stored = jdbc.queryForObject("SELECT output::text FROM tool_execution WHERE agent_execution_id = ?",
+                String.class, id(execution));
+        assertThat(stored).contains("RUNNING").doesNotContain(ENV_SECRET, "DB_PASSWORD", TARGET_NAME);
+
+        List<LlmRequest> sentToModel = llm.requestsFor(marker);
+        assertThat(sentToModel).hasSize(2);
+        LlmMessage lastSent = sentToModel.get(1).messages().getLast();
+        assertThat(lastSent).isInstanceOfSatisfying(LlmMessage.ToolResult.class,
+                result -> assertThat(result.content()).as("the tool result did reach the model").contains("RUNNING"));
+        for (LlmRequest request : sentToModel) {
+            assertThat(request.toString()).doesNotContain(ENV_SECRET, "DB_PASSWORD", TARGET_NAME);
+        }
+        assertThat(execution.get("answer").get("text").asString()).doesNotContain(ENV_SECRET);
+        assertThat(proxyRequestLog()).contains("GET /v1.44/containers/" + TARGET_NAME + "/json");
     }
 
     // ---- 3. secrets printed in the target's log ----------------------------------------------------------
@@ -312,9 +347,11 @@ class RealDockerIT extends IntegrationTest {
     // ---- helpers ----------------------------------------------------------------------------------------
 
     private ToolExecutionOutcome run(String tool, String argumentsJson) {
+        ExecutionIds fixture = executionFixture(operator);
         return executor.execute(new ToolExecutionRequest(
                 new PolicyContext(operator.organizationId(), environment, operator.id(), 10),
-                Ids.newId(), null, 1, new ToolProposal(tool, argumentsJson, "call-1", "real docker test")));
+                fixture.agentExecutionId(), fixture.llmCallId(), 1,
+                new ToolProposal(tool, argumentsJson, "call-1", "real docker test")));
     }
 
     private JsonNode data(ToolExecutionOutcome outcome) {

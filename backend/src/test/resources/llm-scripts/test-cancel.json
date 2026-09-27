@@ -1,0 +1,21 @@
+{
+  "name": "test-cancel",
+  "when": "\\[CANCEL\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "Checking.",
+      "toolCalls": [
+        {
+          "name": "getContainerStatus",
+          "arguments": {
+            "service": "demo-api"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Done."
+    }
+  ]
+}

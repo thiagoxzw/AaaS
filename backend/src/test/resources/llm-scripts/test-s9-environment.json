@@ -1,0 +1,21 @@
+{
+  "name": "test-s9-environment",
+  "when": "\\[S9\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "Inspecting demo-api.",
+      "toolCalls": [
+        {
+          "name": "getContainerStatus",
+          "arguments": {
+            "service": "demo-api"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Observed: {{lastToolResult}}"
+    }
+  ]
+}

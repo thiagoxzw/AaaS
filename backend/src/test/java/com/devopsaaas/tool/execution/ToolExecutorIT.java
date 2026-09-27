@@ -160,8 +160,10 @@ class ToolExecutorIT extends IntegrationTest {
 
     @Test
     void exhaustedBudget_isDenied() {
+        ExecutionIds fixture = executionFixture(operator);
         ToolExecutionOutcome outcome = executor.execute(new ToolExecutionRequest(
-                new PolicyContext(DEFAULT_ORGANIZATION, assisted, operator.id(), 0), Ids.newId(), null, 1,
+                new PolicyContext(DEFAULT_ORGANIZATION, assisted, operator.id(), 0), fixture.agentExecutionId(),
+                fixture.llmCallId(), 1,
                 new ToolProposal("testStatus", "{\"service\":\"demo-api\"}", "call", null)));
 
         assertDenied(outcome, DenialReason.BUDGET_EXCEEDED);
@@ -271,9 +273,11 @@ class ToolExecutorIT extends IntegrationTest {
     }
 
     private ToolExecutionOutcome run(TestUser user, UUID environmentId, String tool, String argumentsJson) {
+        ExecutionIds fixture = executionFixture(user);
         return executor.execute(new ToolExecutionRequest(
                 new PolicyContext(user.organizationId(), environmentId, user.id(), 10),
-                Ids.newId(), null, 1, new ToolProposal(tool, argumentsJson, "call-1", "because the test says so")));
+                fixture.agentExecutionId(), fixture.llmCallId(), 1,
+                new ToolProposal(tool, argumentsJson, "call-1", "because the test says so")));
     }
 
     private static void assertDenied(ToolExecutionOutcome outcome, DenialReason reason) {

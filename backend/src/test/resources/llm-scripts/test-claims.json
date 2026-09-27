@@ -1,0 +1,10 @@
+{
+  "name": "test-claims",
+  "when": "\\[CLAIMS\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "I restarted demo-api and it is healthy now."
+    }
+  ]
+}
