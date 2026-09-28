@@ -39,8 +39,9 @@ import tools.jackson.databind.node.ObjectNode;
  *       Our database stays the source of truth; no {@code previous_response_id}.</li>
  *   <li>{@code strict: false} on the tools: the backend validates every argument strictly anyway.</li>
  *   <li>Up to {@code maxRetries} retries on 429 and 5xx, honouring Retry-After, within the call's timeout;
- *       no retry on other 4xx.</li>
- *   <li>Error bodies are never read into messages or logs: they may echo the prompt.</li>
+ *       no retry on other 4xx, nor on a 429 that means the account has no credit left.</li>
+ *   <li>Error bodies are never read into messages or logs: they may echo the prompt. The only field ever read
+ *       is {@code error.type} of a 429, compared with a fixed value.</li>
  * </ul>
  *
  * <p>The request and response formats follow the public documentation as found through third-party sources
@@ -114,10 +115,12 @@ public final class OpenAiLlmAdapter implements LlmGateway, AutoCloseable {
             if (status == 200) {
                 return parse(response.body());
             }
-            Category category = status == 429 ? Category.RATE_LIMITED
+            Category category = status == 429
+                    ? quotaExhausted(response.body()) ? Category.QUOTA_EXHAUSTED : Category.RATE_LIMITED
                     : status >= 500 || status == 408 ? Category.UNAVAILABLE
                     : Category.REJECTED;
-            if (category == Category.REJECTED || !retry(attempt, retryAfter(response), deadline)) {
+            if (category == Category.REJECTED || category == Category.QUOTA_EXHAUSTED
+                    || !retry(attempt, retryAfter(response), deadline)) {
                 throw new LlmException(category, "The model provider answered HTTP " + status);
             }
         }
@@ -250,6 +253,19 @@ public final class OpenAiLlmAdapter implements LlmGateway, AutoCloseable {
             return false;
         }
         return true;
+    }
+
+    /**
+     * A 429 is either a real rate limit or an account without credit. Seen on the first real run (slice 6):
+     * {@code {"error": {"type": "insufficient_quota", "code": "credit_balance_exhausted", ...}}}. Only
+     * {@code error.type} is read and compared; nothing of the body reaches a message or a log.
+     */
+    private boolean quotaExhausted(byte[] body) {
+        try {
+            return "insufficient_quota".equals(json.readTree(body).path("error").path("type").asString(""));
+        } catch (JacksonException exception) {
+            return false;
+        }
     }
 
     private static Duration retryAfter(HttpResponse<?> response) {

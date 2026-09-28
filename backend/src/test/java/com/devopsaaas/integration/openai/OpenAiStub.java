@@ -34,6 +34,14 @@ public final class OpenAiStub implements AutoCloseable {
             return new Answer(status, "{\"error\":{\"message\":\"echo of the prompt that must not leak\"}}",
                     Map.of(), 0);
         }
+
+        /** An account without credit, as the real API answered on the first run (slice 6). */
+        public static Answer quotaExhausted() {
+            return new Answer(429, """
+                    {"error":{"message":"You have no credits remaining. echo of the prompt that must not leak",
+                     "type":"insufficient_quota","param":null,"code":"credit_balance_exhausted"}}
+                    """, Map.of("Retry-After", "1"), 0);
+        }
     }
 
     private final HttpServer server;

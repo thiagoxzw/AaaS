@@ -184,6 +184,23 @@ class OpenAiLlmAdapterTest {
     }
 
     @Test
+    void a429WithoutCredit_isQuotaExhausted_andNeverRetried() {
+        stub.answer(body -> OpenAiStub.Answer.quotaExhausted());
+
+        assertCategory(Category.QUOTA_EXHAUSTED);
+        assertThat(stub.requests()).hasSize(1);
+        assertThat(meters.find("devops.llm.retries").counter()).isNull();
+
+        // Any other 429, or one whose body is not JSON, is still a rate limit and is retried.
+        for (String body : List.of("{\"error\":{\"type\":\"requests\"}}", "not json", "")) {
+            stub.reset();
+            stub.answer(request -> new OpenAiStub.Answer(429, body, Map.of(), 0));
+            assertCategory(Category.RATE_LIMITED);
+            assertThat(stub.requests()).as(body).hasSize(3);
+        }
+    }
+
+    @Test
     void aSlowProvider_timesOut_withinTheCallsTimeout() {
         stub.answer(body -> new OpenAiStub.Answer(200, OpenAiStub.text("late", 1, 1), Map.of(), 3_000));
 
@@ -211,6 +228,10 @@ class OpenAiLlmAdapterTest {
                     .satisfies(error -> assertThat(error.getMessage()).doesNotContain(API_KEY)
                             .doesNotContain("echo of the prompt"));
         }
+        stub.answer(body -> OpenAiStub.Answer.quotaExhausted());
+        assertThatThrownBy(() -> adapter.complete(request(new LlmMessage.User("q"))))
+                .satisfies(error -> assertThat(error.getMessage()).doesNotContain("echo of the prompt")
+                        .doesNotContain("credit"));
         stub.answer(body -> OpenAiStub.Answer.ok("not json"));
         assertThatThrownBy(() -> adapter.complete(request(new LlmMessage.User("q"))));
 
