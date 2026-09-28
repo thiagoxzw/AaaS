@@ -44,6 +44,9 @@ class OpenAiAgentIT extends AgentTestSupport {
         if (body.contains("[FAIL]")) {
             return OpenAiStub.Answer.status(500);
         }
+        if (body.contains("[NO-CREDIT]")) {
+            return OpenAiStub.Answer.quotaExhausted();
+        }
         if (body.contains("function_call_output") && !body.contains("[LOOP]")) {
             return OpenAiStub.Answer.ok(OpenAiStub.text("demo-api is running; see the findings.", 1000, 200));
         }
@@ -151,5 +154,18 @@ class OpenAiAgentIT extends AgentTestSupport {
         assertThat(execution.get("status").asString()).isEqualTo("FAILED");
         assertThat(execution.get("statusReason").asString()).isEqualTo("LLM_UNAVAILABLE");
         assertThat(STUB.requests().stream().filter(request -> request.body().contains(marker))).hasSize(3);
+    }
+
+    /** Seen on the first real run: an account without credit answered 429 and was retried as a rate limit. */
+    @Test
+    void anAccountWithoutCredit_failsAtOnce_withItsOwnReason() {
+        Tenant tenant = tenant();
+        String marker = uniqueName("no-credit");
+
+        JsonNode execution = ask(tenant.operator(), tenant.conversation(), "[NO-CREDIT] " + marker);
+
+        assertThat(execution.get("status").asString()).isEqualTo("FAILED");
+        assertThat(execution.get("statusReason").asString()).isEqualTo("LLM_QUOTA_EXHAUSTED");
+        assertThat(STUB.requests().stream().filter(request -> request.body().contains(marker))).hasSize(1);
     }
 }

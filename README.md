@@ -51,7 +51,7 @@ CONV=$(curl -s -X POST localhost:8080/api/v1/conversations -H "Authorization: Be
   -H 'Content-Type: application/json' -d "{\"environmentId\":\"$ENV\"}" | jq -r .id)
 EXEC=$(curl -s -X POST localhost:8080/api/v1/conversations/$CONV/messages -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: my-first-question' \
-  -d '{"content":"o demo-api está de pé?"}' | jq -r .executionId)     # 202 Accepted
+  --data-binary @- <<<'{"content":"o demo-api está de pé?"}' | jq -r .executionId)     # 202 Accepted
 curl -s localhost:8080/api/v1/executions/$EXEC -H "Authorization: Bearer $TOKEN"   # status, resposta e actions[]
 
 # Caos na demo-api (sem autenticação de propósito; só em 127.0.0.1)
@@ -70,8 +70,21 @@ O Actuator (health e métricas) fica na porta 8081, **acessível só dentro da r
 `docker-socket-proxy` é o único container que monta o socket do Docker, e não tem porta publicada: o backend o
 alcança por uma rede interna ([ADR-011](docs/adr/0011-linuxserver-socket-proxy.md)).
 
-*No Windows, o Docker Desktop com WSL2 deve expor `/var/run/docker.sock` para os containers; ainda não
-verifiquei isso. Se o `connectivity-check` responder `reachable: false`, comece por aí.*
+### No Windows (Git Bash)
+
+Funciona com o Docker Desktop (WSL2): o proxy alcança o Docker Engine e o agente lê o `demo-api`, como mostrou a
+primeira execução com o modelo real ([fatia 6](docs/fatias/06-llm-real.md#validação-com-o-modelo-real)). Quatro
+cuidados, todos encontrados nessa execução:
+
+- **Virtualização ligada.** Sem ela o Docker Desktop não inicia ("Virtualization support not detected"): ative-a
+  na BIOS/UEFI e os recursos "Plataforma de Máquina Virtual" e WSL do Windows.
+- **Valores do `.env` só com letras e números** (por exemplo, `openssl rand -hex 24`). O Compose interpreta `$`
+  no `.env`, e caracteres como `(`, `&` ou `[` quebram qualquer script que leia o arquivo.
+- **O `jq` do Windows termina as linhas com CRLF.** Nos comandos à mão, o `\r` entra nos ids e nas URLs; defina
+  antes `jq() { command jq "$@" | tr -d '\r'; }`. O `scripts/evaluate-agent.sh` já faz isso sozinho.
+- **Acentos não podem ir como argumento do `curl`.** O `curl.exe` recebe os argumentos na página de código do
+  Windows, e o `á` vira um byte inválido em UTF-8 (o backend responde `400`). Mande o JSON pela entrada padrão,
+  como no exemplo acima (`--data-binary @- <<<'...'`).
 
 ```bash
 ./mvnw verify                 # testes unitários, de integração (Testcontainers, inclusive com Docker real e o proxy) e SpotBugs + FindSecBugs
@@ -83,7 +96,8 @@ O padrão é `LLM_PROVIDER=scripted`: roteiros determinísticos, sem API key e s
 preencha no `.env` `LLM_PROVIDER=openai`, `OPENAI_API_KEY`, `LLM_MODEL`, os dois preços por milhão de tokens e
 `LLM_DAILY_BUDGET_USD`. Faltando qualquer um, o backend não sobe. O custo estimado de cada execução aparece em
 `GET /api/v1/executions/{id}`, e `scripts/evaluate-agent.sh` roda os cenários de falha do `demo-api` e grava o
-resultado em `evaluations/`.
+resultado em `evaluations/`. Uma conta sem crédito termina a execução em `FAILED` / `LLM_QUOTA_EXHAUSTED`, sem
+retentativas.
 
 > ⚠️ **O conteúdo enviado ao modelo sai da sua máquina.** Isso inclui o estado dos containers da allowlist e
 > trechos de logs, já mascarados e truncados. O mascaramento de segredos de terceiros é *best-effort*

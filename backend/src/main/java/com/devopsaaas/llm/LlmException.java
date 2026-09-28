@@ -11,7 +11,9 @@ public class LlmException extends RuntimeException {
     public enum Category {
         TIMEOUT, RATE_LIMITED, UNAVAILABLE, INVALID_RESPONSE,
         /** The provider refused the request itself (bad credentials, invalid request): retrying cannot help. */
-        REJECTED
+        REJECTED,
+        /** The provider account has no credit or quota left: retrying cannot help until someone adds it. */
+        QUOTA_EXHAUSTED
     }
 
     private final Category category;

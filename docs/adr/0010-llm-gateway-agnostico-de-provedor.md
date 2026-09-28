@@ -47,7 +47,9 @@ provedor, os testes e o raciocínio sobre segurança ficam acoplados a um fornec
   reconstruído dos nossos registros. Sem `previous_response_id`: o banco continua sendo a fonte da verdade.
 - **`strict: false`** nas ferramentas: a validação estrita dos argumentos é do backend (`ArgumentBinder`).
 - **Até 2 retentativas** em 429 e 5xx, respeitando `Retry-After`, dentro do timeout da chamada; 4xx sem
-  retentativa (`REJECTED`).
+  retentativa (`REJECTED`). Depois da validação com o modelo real, um 429 de conta sem crédito
+  (`error.type = insufficient_quota`) também não é retentado (`QUOTA_EXHAUSTED`): é o único campo do corpo de
+  erro que o adapter lê.
 - **Modelo, preços e orçamento diário sem valor padrão:** faltando qualquer um, a aplicação não sobe.
 - **Ressalva:** a documentação oficial da OpenAI não era alcançável do ambiente de desenvolvimento. O formato
   foi lido em fontes de terceiros, fixado pelos testes com stub e **precisa ser confirmado na primeira execução

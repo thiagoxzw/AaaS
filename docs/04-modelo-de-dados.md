@@ -219,7 +219,7 @@ usa só esta tabela, o que mantém o contexto enviado ao LLM pequeno.
 | trigger_message_id | uuid | não | FK para `message` (a mensagem do usuário). Único. |
 | requested_by | uuid | não | FK `app_user`: **em nome de quem** o agente age |
 | status | text | não | `QUEUED`, `RUNNING`, `WAITING_APPROVAL`, `COMPLETED`, `FAILED`, `BUDGET_EXCEEDED`, `INTERRUPTED`, `CANCELLED` |
-| status_reason | text | sim | Por exemplo, qual limite foi atingido. *Fatia 4:* `MAX_TOOL_CALLS`, `MAX_LLM_ITERATIONS`, `MAX_ACTIVE_TIME`, `LLM_<categoria>` (por exemplo `LLM_RATE_LIMITED`), `LLM_EMPTY_RESPONSE`, `LLM_OUTPUT_TRUNCATED` (em `COMPLETED`: a resposta é parcial, e a API a marca com `complete: false`), `ENVIRONMENT_UNAVAILABLE`, `INTERNAL_ERROR`, `CANCELLED_BY_USER`, `BACKEND_RESTARTED` |
+| status_reason | text | sim | Por exemplo, qual limite foi atingido. *Fatia 4:* `MAX_TOOL_CALLS`, `MAX_LLM_ITERATIONS`, `MAX_ACTIVE_TIME`, `LLM_<categoria>` (por exemplo `LLM_RATE_LIMITED`; *fatia 6:* `LLM_REJECTED`, `LLM_QUOTA_EXHAUSTED`), `LLM_EMPTY_RESPONSE`, `LLM_OUTPUT_TRUNCATED` (em `COMPLETED`: a resposta é parcial, e a API a marca com `complete: false`), `ENVIRONMENT_UNAVAILABLE`, `INTERNAL_ERROR`, `CANCELLED_BY_USER`, `BACKEND_RESTARTED` |
 | autonomy_level | text | não | **Snapshot** no início (para auditoria) |
 | llm_model | text | não | O modelo usado. Responde à pergunta "qual agente?" |
 | prompt_version | text | não | Versão do prompt de sistema (versionado no código) |
