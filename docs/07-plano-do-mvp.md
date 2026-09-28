@@ -180,8 +180,15 @@ resultado da ferramenta (prompt `agent-system-v2`) e são contados em `devops.to
 **Resultado da fatia 6** ([detalhes](fatias/06-llm-real.md)): `OpenAiLlmAdapter` com cliente HTTP próprio
 sobre a Responses API sem estado, custo por chamada e por execução, orçamento diário (429 ao aceitar,
 `BUDGET_EXCEEDED`/`DAILY_BUDGET` entre voltas) e `scripts/evaluate-agent.sh` para a primeira medição de H2. A
-documentação oficial da OpenAI não era alcançável do ambiente de desenvolvimento: **a demonstração com o modelo
-real e a medição de H2 ficam para a máquina do autor**.
+documentação oficial da OpenAI não era alcançável do ambiente de desenvolvimento: a demonstração com o modelo
+real e a medição de H2 ficaram para a máquina do autor.
+
+**Validação com o modelo real (2026-09-28):** o formato da Responses API foi confirmado sem ajustes. A
+validação mudou três coisas: a categoria `QUOTA_EXHAUSTED` (conta sem crédito, sem retentativa), o
+`evaluate-agent.sh` robusto no Windows e o registro da **primeira medição de H2: 3 sim, 1 parcial, 1 não**. Os
+dois erros vêm dos logs de execuções anteriores do mesmo container, que o backend entrega como se fossem atuais.
+A correção muda o contrato das ferramentas, por isso vai ter desenho próprio antes da fatia 7, seguido de uma
+nova medição com os mesmos 5 cenários ([detalhes](fatias/06-llm-real.md#validação-com-o-modelo-real)).
 
 ### Fatia 7 — Aprovação
 
