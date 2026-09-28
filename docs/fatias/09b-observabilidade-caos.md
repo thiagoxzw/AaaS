@@ -1,7 +1,7 @@
 # Fatia 9b — Observabilidade e caos
 
-> Status: **em revisão**. Métricas, dashboard e os cinco cenários de caos estão prontos e documentados; as
-> observações O-9b-1 e O-9b-2 aguardam decisão. Plano: [07 — Plano do MVP](../07-plano-do-mvp.md), fatia 9.
+> Status: **implementada** (2026-09-28). Por decisão do autor, O-9b-1 foi corrigida e O-9b-2 fica registrada
+> como limitação conhecida. Plano: [07 — Plano do MVP](../07-plano-do-mvp.md), fatia 9.
 
 ## Objetivo
 
@@ -38,7 +38,7 @@ tem 14 painéis, cada um respondendo a uma pergunta:
 | Quanto tempo esperaram? | *Approval wait (p50 / p95)* |
 | Quantos restarts foram pedidos, e como terminaram? | *restartContainer calls by status* |
 | Quantos foram verificados, e com que resultado? | *Restarts verified*, *Restart verification*, *Restart verification duration (p95)* |
-| Quantos terminaram como `OUTCOME_UNKNOWN`? | *Restarts with unknown outcome* (ver O-9b-1) |
+| Quantos terminaram como `OUTCOME_UNKNOWN`? | *Restarts with unknown outcome*: os vistos ao vivo e os atribuídos pela recuperação depois de uma queda (O-9b-1) |
 | O que a política negou? | *Policy denials by reason* |
 | Quanto LLM foi consumido? | *LLM calls by outcome*, *LLM tokens*, *LLM estimated cost* |
 
@@ -70,7 +70,7 @@ independente do efeito é o `docker events` do próprio daemon**, e não o que o
 | # | Cenário | O que foi feito | Observado | Esperado? |
 |---|---|---|---|---|
 | 1a | `kill -9` no backend com uma execução esperando aprovação | `docker kill -s KILL` e `docker start` | Execução continuou `WAITING_APPROVAL`, aprovação `PENDING`; recuperação: "0 interrupted, 0 unknown". Aprovada depois: restart `SUCCEEDED`, `demo-api` `healthy` | Sim |
-| 1b | `kill -9` no backend **durante** um restart em andamento | Aprovação às 22:29:34; `kill -9` às 22:29:37, com a chamada `RUNNING` | **O Docker concluiu o restart assim mesmo:** `kill` 22:29:34 (SIGTERM), `kill` + `die` + `start` + `restart` 22:29:44; `StartedAt` novo. Na subida: chamada `OUTCOME_UNKNOWN`, execução `INTERRUPTED/BACKEND_RESTARTED`, aprovação `APPROVED`. Depois de mais de 2 varreduras (70 s): **1** restart só | Sim. O contador do painel de `OUTCOME_UNKNOWN` não registra este caso (O-9b-1) |
+| 1b | `kill -9` no backend **durante** um restart em andamento | Aprovação às 22:29:34; `kill -9` às 22:29:37, com a chamada `RUNNING` | **O Docker concluiu o restart assim mesmo:** `kill` 22:29:34 (SIGTERM), `kill` + `die` + `start` + `restart` 22:29:44; `StartedAt` novo. Na subida: chamada `OUTCOME_UNKNOWN`, execução `INTERRUPTED/BACKEND_RESTARTED`, aprovação `APPROVED`. Depois de mais de 2 varreduras (70 s): **1** restart só | Sim. Na execução observada, o contador do painel não registrava este caso; corrigido depois (O-9b-1) |
 | 2 | Restart **gracioso** do backend durante um restart em andamento | `docker compose restart backend` 3 s depois da aprovação | O desligamento gracioso terminou em cerca de 1 s (código 0) e **não esperou** a chamada. A *thread* da ferramenta foi interrompida (`InterruptedException`), e o executor registrou "outcome unknown" no log, mas o pool do banco fechou logo depois e o resultado não foi gravado. Na subida: chamada `OUTCOME_UNKNOWN` pela recuperação, execução `INTERRUPTED`. O Docker concluiu o restart (`StartedAt` 22:31:47) | Estado correto, mas o restart gracioso se comporta como o `kill -9` para uma chamada em andamento (O-9b-2) |
 | 3 | Proxy indisponível | `docker compose stop docker-socket-proxy` | `connectivity-check` → `reachable: false`; `services/status` → `503`. Diagnóstico: `getContainerStatus` `FAILED/RUNTIME_UNAVAILABLE`, execução `COMPLETED` dizendo isso. Restart aprovado com o proxy fora: `FAILED/RUNTIME_UNAVAILABLE` "the restart was not sent" (caso E, agora ao vivo), **0** restarts. Proxy de volta: o backend voltou a alcançá-lo sozinho em até 7 s | Sim. A primeira checagem, 2 s depois de subir o proxy, ainda falhou porque o proxy não tinha terminado de subir, não por conexão velha |
 | 4 | LLM indisponível | Provedor `openai` com chave e preços falsos e URL numa porta fechada (arquivo de *override* fora do repositório) | Execução `FAILED/LLM_UNAVAILABLE` em 2 s; 1 `llm_call` com `ERROR/UNAVAILABLE`, 2 retentativas; **0** chamadas de ferramenta; a chave falsa não aparece no log | Sim |
@@ -84,24 +84,42 @@ inventou um resultado, e em nenhum caso enviou um segundo pedido.
 
 | # | Observação | Evidência | Muda o modelo de segurança? | Estado |
 |---|---|---|---|---|
-| O-9b-1 | O `OUTCOME_UNKNOWN` atribuído **pela recuperação** não passa pelo executor e não entra no `devops.tool.executions`. Por isso o painel *Restarts with unknown outcome* só conta os casos vistos ao vivo (cenário 5), e não os de uma queda (1b, 2). Os contadores também zeram quando o backend reinicia. A auditoria (`TOOL_EXECUTION_OUTCOME_UNKNOWN`) e o banco registram todos | Cenário 1b: depois da subida, o *scrape* mostra `devops_agent_executions_total{status="INTERRUPTED"} 1` e nenhuma série `OUTCOME_UNKNOWN` | Não: é observabilidade; a fonte da verdade continua certa | Aguardando decisão |
-| O-9b-2 | O desligamento gracioso não espera as chamadas de ferramenta em andamento. A *thread* é interrompida, o resultado que o executor calcula (`OUTCOME_UNKNOWN`) não é gravado porque o pool já fechou, e quem resolve é a recuperação na próxima subida. Na prática, para uma chamada em andamento, o restart gracioso equivale ao `kill -9` | Cenário 2: logs com o `InterruptedException` às 22:31:40.372, o fechamento do JPA às 22:31:40.380 e a chamada ainda `RUNNING` na subida | Não: o estado final é o mesmo e correto (`OUTCOME_UNKNOWN`), e não há segundo restart | Aguardando decisão |
+| O-9b-1 | O `OUTCOME_UNKNOWN` atribuído **pela recuperação** não passa pelo executor e não entra no `devops.tool.executions`. Por isso o painel *Restarts with unknown outcome* só conta os casos vistos ao vivo (cenário 5), e não os de uma queda (1b, 2). Os contadores também zeram quando o backend reinicia. A auditoria (`TOOL_EXECUTION_OUTCOME_UNKNOWN`) e o banco registram todos | Cenário 1b: depois da subida, o *scrape* mostra `devops_agent_executions_total{status="INTERRUPTED"} 1` e nenhuma série `OUTCOME_UNKNOWN` | Não: é observabilidade; a fonte da verdade continua certa | **Corrigido:** a recuperação conta no mesmo `devops.tool.executions`, depois do commit, uma vez por chamada |
+| O-9b-2 | O desligamento gracioso não espera as chamadas de ferramenta em andamento. A *thread* é interrompida, o resultado que o executor calcula (`OUTCOME_UNKNOWN`) não é gravado porque o pool já fechou, e quem resolve é a recuperação na próxima subida. Na prática, para uma chamada em andamento, o restart gracioso equivale ao `kill -9` | Cenário 2: logs com o `InterruptedException` às 22:31:40.372, o fechamento do JPA às 22:31:40.380 e a chamada ainda `RUNNING` na subida | Não: o estado final é o mesmo e correto (`OUTCOME_UNKNOWN`), e não há segundo restart | **Limitação conhecida**, documentada e não corrigida (ver abaixo) |
 | O-9b-3 | O painel com `increase()` mostrava zeros | Consultas ao Prometheus no compose | Não | **Resolvido nesta etapa** (é o próprio dashboard da 9b): painéis contam desde a subida |
 
-### Opções para as observações em aberto
+### O-9b-1: correção
 
-**O-9b-1**
-- **(A) Documentar:** o painel conta os casos ao vivo, e a auditoria e o banco contam todos.
-- **(B) Contar também na recuperação:** `ToolExecutionHistory.recoverInterrupted` incrementaria o mesmo contador. O zeramento na subida continua, porque é próprio dos contadores do Prometheus.
+`ToolExecutionHistory.recoverInterrupted` incrementa `devops.tool.executions` com as mesmas tags do executor
+(`tool`, `status=OUTCOME_UNKNOWN`, `risk`), depois do commit da recuperação e uma vez por chamada. O painel
+*Restarts with unknown outcome* passa a contar os dois caminhos.
 
-**O-9b-2**
-- **(A) Documentar:** o estado já fica correto na próxima subida.
-- **(B) Esperar as chamadas em andamento no desligamento gracioso**, com um limite abaixo do tempo que o Docker dá antes do SIGKILL (10 s no compose). É uma mudança de ciclo de vida: o `restartContainer` pode levar até 90 s, então o limite resolveria só parte dos casos.
+**Prova:** `RestartContainerIT.anUnknownOutcome_isCountedOnce_whetherSeenLiveOrSetByTheRecovery`. Um
+`OUTCOME_UNKNOWN` ao vivo soma 1; um atribuído pela recuperação soma mais 1; uma segunda recuperação e a
+varredura não somam nada. Sem a correção, o mesmo teste falha em "plus the one set by the recovery"
+(esperado 2, obtido 1).
+
+**No compose, depois da correção:** o cenário 1b foi repetido (`kill -9` com o restart em andamento). A execução
+ficou `INTERRUPTED`, a chamada `OUTCOME_UNKNOWN`, o Docker completou o restart, e o painel *Restarts with unknown
+outcome* mostrou **1**. Antes da correção, essa série não existia depois da subida.
+
+Os contadores continuam zerando quando o backend sobe, o que é próprio dos contadores do Prometheus. Um
+`OUTCOME_UNKNOWN` atribuído na subida entra na contagem do processo novo.
+
+### O-9b-2: limitação conhecida
+
+> **O desligamento gracioso não garante a conclusão das ferramentas em andamento. Uma operação interrompida
+> durante o desligamento pode resultar em `OUTCOME_UNKNOWN`, que é atribuído pela recuperação na próxima
+> subida.**
+
+Não foi alterado porque seria uma mudança de ciclo de vida, e resolveria só parte dos casos: o
+`restartContainer` pode levar até 90 s, e o Docker dá 10 s antes do SIGKILL no compose. O que o sistema garante
+continua valendo: o estado não é inventado, e não há segundo pedido.
 
 ## Testes
 
-`./mvnw verify`: **519 testes** (356 unitários e 161 de integração no backend, e 2 no `demo-api`), 0 falhas,
-SpotBugs sem achados. Os 161 de integração também passaram em ordem alfabética reversa. Na 9a eram 516.
+`./mvnw verify`: **520 testes** (356 unitários e 162 de integração no backend, e 2 no `demo-api`), 0 falhas,
+SpotBugs sem achados. Os 162 de integração também passaram em ordem alfabética reversa. Na 9a eram 516.
 
 | Teste novo | O que prova |
 |---|---|
@@ -109,6 +127,7 @@ SpotBugs sem achados. Os 161 de integração também passaram em ordem alfabéti
 | `ApprovalIT.approvalMetrics_countEachCommittedTransitionOnce` | `devops.approvals` e `devops.approval.wait` contam cada transição gravada uma vez |
 | Asserção nova em `ApprovalIT.theDecisionAndItsAuditEvent_areAtomic` | Uma decisão desfeita não aparece na métrica |
 | `RestartContainerIT.everySeriesOfTheAgentDashboard_isExposed_withTheLabelsItGroupsBy` | O dashboard só consulta séries que existem, com os *labels* certos |
+| `RestartContainerIT.anUnknownOutcome_isCountedOnce_whetherSeenLiveOrSetByTheRecovery` | O-9b-1: o `OUTCOME_UNKNOWN` da recuperação conta uma vez só, na mesma série |
 
 Os cenários de caos são manuais e estão registrados acima com os horários e os eventos do daemon. Eles não
 viraram testes de CI: matam e reiniciam containers do compose, e o objetivo aqui era observar.

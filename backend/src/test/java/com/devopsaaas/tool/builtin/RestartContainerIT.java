@@ -15,6 +15,7 @@ import com.devopsaaas.tool.container.ContainerState;
 import com.devopsaaas.tool.container.FakeContainerRuntime;
 import com.devopsaaas.tool.container.HealthStatus;
 import com.devopsaaas.tool.container.LogLine;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -61,6 +62,9 @@ class RestartContainerIT extends AgentTestSupport {
 
     @Value("${local.management.port}")
     int managementPort;
+
+    @Autowired
+    MeterRegistry meters;
 
     private TestUser admin;
     private TestUser operator;
@@ -356,6 +360,45 @@ class RestartContainerIT extends AgentTestSupport {
         assertThat(jdbc.queryForObject("SELECT status FROM approval WHERE id = ?::uuid", String.class, approvalId))
                 .isEqualTo("APPROVED");
         assertThat(restarts()).isZero();
+    }
+
+    /**
+     * Slice 9b, observation O-9b-1 (closed): an OUTCOME_UNKNOWN set by the startup recovery is counted in the same
+     * series as one the executor saw live, exactly once, whatever runs after it. Cumulative counter: deltas.
+     */
+    @Test
+    void anUnknownOutcome_isCountedOnce_whetherSeenLiveOrSetByTheRecovery() {
+        double before = unknownRestarts();
+
+        // Live: the connection drops after the request.
+        String droppingContainer = uniqueName("dropping-container");
+        String dropping = environment(admin, "ASSISTED", droppingContainer);
+        runtime.failRestartWith(droppingContainer, ContainerRuntimeException.Category.UNAVAILABLE);
+        JsonNode live = ask(operator, conversation(operator, dropping), question());
+        decide(approver, approvalOf(live).get("approvalId").asString(), "APPROVE", null);
+        finished(operator, live.get("executionId").asString());
+        assertThat(unknownRestarts() - before).as("seen live by the executor").isOne();
+
+        // Recovery: the backend died while the call was running (rows as the dead process leaves them).
+        JsonNode crashed = ask(operator, conversation(operator, environment), question());
+        decide(approver, approvalOf(crashed).get("approvalId").asString(), "APPROVE", null);
+        String executionId = crashed.get("executionId").asString();
+        String toolExecution = actions(finished(operator, executionId)).getLast().get("toolExecutionId").asString();
+        jdbc.update("UPDATE tool_execution SET status = 'RUNNING', output = NULL, finished_at = NULL, "
+                + "duration_ms = NULL WHERE id = ?::uuid", toolExecution);
+        jdbc.update("UPDATE agent_execution SET status = 'RUNNING', finished_at = NULL WHERE id = ?::uuid",
+                executionId);
+
+        recovery.recover();
+        assertThat(unknownRestarts() - before).as("plus the one set by the recovery").isEqualTo(2);
+        recovery.recover();
+        resumption.sweep();
+        assertThat(unknownRestarts() - before).as("a second recovery and the sweep add nothing").isEqualTo(2);
+    }
+
+    private double unknownRestarts() {
+        return meters.counter("devops.tool.executions", "tool", "restartContainer", "status", "OUTCOME_UNKNOWN",
+                "risk", "HIGH_RISK").count();
     }
 
     /** S6 in the arguments: "userApproved" is not part of the input, so the call is invalid and never waits. */

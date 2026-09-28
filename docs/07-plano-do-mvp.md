@@ -270,9 +270,9 @@ métricas (`devops.approvals`, `devops.approval.wait`, `devops.tool.restart.veri
 contadas depois do commit, e o dashboard *Agente*, ligado ao código por um teste que exige cada série que ele
 consulta. Cinco cenários de caos observados no compose, com o `docker events` como evidência independente. Nos
 três em que a conexão caiu com um restart em andamento (`kill -9`, restart gracioso e proxy caindo), o Docker
-concluiu o restart, o sistema registrou `OUTCOME_UNKNOWN` e não houve segundo pedido. Duas observações ficaram
-para decisão: o `OUTCOME_UNKNOWN` da recuperação fora da métrica, e o desligamento gracioso que não espera as
-chamadas em andamento.
+concluiu o restart, o sistema registrou `OUTCOME_UNKNOWN` e não houve segundo pedido. O `OUTCOME_UNKNOWN`
+atribuído pela recuperação passou a contar na mesma métrica (O-9b-1). O desligamento gracioso que não espera as
+chamadas em andamento ficou registrado como limitação conhecida (O-9b-2).
 
 ## 4. Definição de pronto (vale para toda fatia)
 

@@ -136,7 +136,7 @@
       "id": 4,
       "type": "stat",
       "title": "Restarts with unknown outcome",
-      "description": "restartContainer calls recorded as OUTCOME_UNKNOWN by the executor: the request may or may not have reached Docker. See docs/fatias/09b-observabilidade-caos.md for what this panel does not count. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "description": "restartContainer calls recorded as OUTCOME_UNKNOWN, seen live by the executor or set by the startup recovery after a crash: the request may or may not have reached Docker. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
