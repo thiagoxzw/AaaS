@@ -32,7 +32,7 @@ Configuração da fatia 3 (a mesma no `docker-compose.yml` e no `RealDockerIT`):
 |---|---|---|
 | `CONTAINERS` | `1` | `GET /containers/json` e `GET /containers/{id}/json` |
 | `ALLOW_LOGS` | `1` | `GET /containers/{id}/logs` |
-| `ALLOW_RESTARTS` | `0` | Nenhuma ferramenta reinicia antes da fatia 8: **menor privilégio por fatia** |
+| `ALLOW_RESTARTS` | `1` desde a fatia 8 (`0` até a fatia 7) | `POST /containers/{id}/restart` para o `restartContainer`. Até a fatia 7 nenhuma ferramenta reiniciava: **menor privilégio por fatia**. Libera também `stop` e `kill` (risco residual 3, abaixo) |
 | `POST` | `0` | Nenhum `POST`, `PUT` ou `DELETE` genérico |
 | `EVENTS` | `0` | O stream de eventos mostra a atividade de **todos** os containers do host; nenhuma ferramenta usa |
 | `PING`, `VERSION` | `1` | `connectivity-check` (RF-12) |
@@ -51,8 +51,13 @@ E o container do proxy é endurecido: sistema de arquivos read-only (com `tmpfs`
 | `stop` e `kill` com `ALLOW_RESTARTS=1` | passam: fazem parte da mesma chave (risco residual da fatia 8) |
 | `GET /containers/{id}/attach/ws` (websocket) | **`101`**: passa (risco residual, abaixo) |
 
-Os `403` são verificados a cada CI em `RealDockerIT.theProxyRefusesEverythingBeyondReadingContainersAndLogs`, com
-o proxy real, a mesma imagem e a mesma configuração do Compose.
+Os `403` são verificados a cada CI em `RealDockerIT.theProxyRefusesEverythingBeyondReadingContainersAndLogsAndRestarting`,
+com o proxy real, a mesma imagem e a mesma configuração do Compose. **Fatia 8:** com `ALLOW_RESTARTS=1`, o restart
+de um container rodando e de um parado responde `204` (a resposta só chega quando o container voltou), `start`,
+`create` e `exec` continuam `403`, e `stop`/`kill` passam (`RealDockerIT.restartContainer_restartsARunningAndAStoppedContainer_andVerifiesWhatCameBack`
+e `stopAndKill_alsoPassTheProxy_residualRiskOfAllowRestarts`). O `scripts/check-compose-docker-socket.sh` passou a
+usar uma lista permitida: qualquer variável do proxy com valor `1` fora de `CONTAINERS`, `ALLOW_LOGS`,
+`ALLOW_RESTARTS`, `PING`, `VERSION` e `DISABLE_IPV6` faz o CI falhar.
 
 ## O que o proxy protege, e o que ele **não** protege
 

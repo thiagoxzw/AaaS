@@ -22,6 +22,9 @@ interface AuditEventRepository extends Repository<AuditEvent, UUID> {
               and (:resourceType is null or e.resourceType = :resourceType)
               and (:resourceId is null or e.resourceId = :resourceId)
               and (:actorUserId is null or e.actorUserId = :actorUserId)
+              and (:toolName is null or e.toolName = :toolName)
+              and (:agentExecutionId is null or e.agentExecutionId = :agentExecutionId)
+              and (:toolExecutionId is null or e.toolExecutionId = :toolExecutionId)
               and e.occurredAt >= :from
               and e.occurredAt < :to
             order by e.occurredAt desc, e.id desc
@@ -31,6 +34,9 @@ interface AuditEventRepository extends Repository<AuditEvent, UUID> {
             @Param("resourceType") AuditResourceType resourceType,
             @Param("resourceId") UUID resourceId,
             @Param("actorUserId") UUID actorUserId,
+            @Param("toolName") String toolName,
+            @Param("agentExecutionId") UUID agentExecutionId,
+            @Param("toolExecutionId") UUID toolExecutionId,
             @Param("from") Instant from,
             @Param("to") Instant to,
             Pageable pageable);

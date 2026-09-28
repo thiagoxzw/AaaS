@@ -24,6 +24,8 @@ interface ApprovalRepository extends Repository<Approval, UUID> {
     @Query("select a from Approval a where a.id = :id and a.organizationId = :organizationId")
     Optional<Approval> lockByIdAndOrganizationId(@Param("id") UUID id, @Param("organizationId") UUID organizationId);
 
+    Optional<Approval> findByToolExecutionIdAndOrganizationId(UUID toolExecutionId, UUID organizationId);
+
     List<Approval> findAllByOrganizationIdAndStatusOrderByCreatedAtDesc(UUID organizationId, ApprovalStatus status);
 
     List<Approval> findAllByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);

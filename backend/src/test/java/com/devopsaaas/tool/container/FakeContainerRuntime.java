@@ -91,10 +91,51 @@ public class FakeContainerRuntime implements ContainerRuntime {
         return new ContainerLogs(ref.serviceName(), lines.subList(from, lines.size()), from > 0);
     }
 
+    /** What a container looks like after a restart (slice 8). The default is RUNNING and HEALTHY. */
+    public enum AfterRestart {
+        HEALTHY, NO_HEALTHCHECK, UNHEALTHY, EXITS, STAYS_STARTING,
+        /** The runtime answers, but the container never starts again: its StartedAt does not move. */
+        NO_NEW_START
+    }
+
+    private final Map<String, AfterRestart> afterRestart = new ConcurrentHashMap<>();
+    private final Map<String, ContainerRuntimeException.Category> restartFailures = new ConcurrentHashMap<>();
+
+    public void afterRestart(String containerName, AfterRestart behaviour) {
+        afterRestart.put(containerName, behaviour);
+    }
+
+    /** The restart call itself fails (for example the connection drops after the request was sent). */
+    public void failRestartWith(String containerName, ContainerRuntimeException.Category category) {
+        restartFailures.put(containerName, category);
+    }
+
     @Override
     public void restart(ContainerRef ref, Duration gracefulStopTimeout) {
         calls.add("restart:" + ref.containerName());
         failIfScripted(ref);
+        ContainerRuntimeException.Category failure = restartFailures.get(ref.containerName());
+        if (failure != null) {
+            throw new ContainerRuntimeException(failure, "Scripted restart failure");
+        }
+        AfterRestart behaviour = afterRestart.getOrDefault(ref.containerName(), AfterRestart.HEALTHY);
+        if (behaviour == AfterRestart.NO_NEW_START) {
+            return;
+        }
+        ContainerSnapshot base = snapshot(ref);
+        // Strictly later than the previous start, as Docker's StartedAt would be.
+        Instant previous = base.startedAt() == null ? Instant.EPOCH : base.startedAt();
+        Instant started = Instant.now().isAfter(previous) ? Instant.now() : previous.plusMillis(1);
+        ContainerState state = behaviour == AfterRestart.EXITS ? ContainerState.EXITED : ContainerState.RUNNING;
+        HealthStatus health = switch (behaviour) {
+            case NO_HEALTHCHECK, EXITS -> HealthStatus.NONE;
+            case UNHEALTHY -> HealthStatus.UNHEALTHY;
+            case STAYS_STARTING -> HealthStatus.STARTING;
+            default -> HealthStatus.HEALTHY;
+        };
+        snapshots.put(ref.containerName(), new ContainerSnapshot(ref.containerName(), state, health,
+                behaviour == AfterRestart.EXITS ? 1 : null, false, base.restartCount(), started,
+                behaviour == AfterRestart.EXITS ? started : null, base.image()));
     }
 
     @Override
@@ -123,9 +164,9 @@ public class FakeContainerRuntime implements ContainerRuntime {
     }
 
     private ContainerSnapshot snapshot(ContainerRef ref) {
-        ContainerSnapshot known = snapshots.get(ref.containerName());
-        ContainerSnapshot base = known != null ? known : new ContainerSnapshot(ref.containerName(),
-                ContainerState.RUNNING, HealthStatus.HEALTHY, null, false, 0, Instant.now(), null, "demo:latest");
+        // The default is created once per container, so its StartedAt is stable like a real container's.
+        ContainerSnapshot base = snapshots.computeIfAbsent(ref.containerName(), name -> new ContainerSnapshot(name,
+                ContainerState.RUNNING, HealthStatus.HEALTHY, null, false, 0, Instant.now(), null, "demo:latest"));
         // The LLM-facing name is the logical one, never the real container name.
         return new ContainerSnapshot(ref.serviceName(), base.state(), base.health(), base.exitCode(),
                 base.oomKilled(), base.restartCount(), base.startedAt(), base.finishedAt(), base.image());

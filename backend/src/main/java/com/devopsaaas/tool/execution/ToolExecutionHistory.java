@@ -8,6 +8,7 @@ import com.devopsaaas.audit.AuditResourceType;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -33,6 +34,12 @@ public class ToolExecutionHistory {
     public List<ToolCallRecord> forAgentExecution(UUID organizationId, UUID agentExecutionId) {
         return executions.findAllByAgentExecutionIdAndOrganizationIdOrderBySeqAsc(agentExecutionId, organizationId)
                 .stream().map(ToolCallRecord::of).toList();
+    }
+
+    /** One call, within the organization (another organization's is empty). */
+    @Transactional(readOnly = true)
+    public Optional<ToolCallRecord> find(UUID organizationId, UUID toolExecutionId) {
+        return executions.findByIdAndOrganizationId(toolExecutionId, organizationId).map(ToolCallRecord::of);
     }
 
     /** Calls of several executions, newest first. */

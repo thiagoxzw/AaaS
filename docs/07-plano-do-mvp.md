@@ -237,6 +237,15 @@ auditoria.
 | **Critérios de aceite** | RF-32, RF-45, RF-46, os critérios do roteiro do documento 01 §5 e H3 |
 | **Testes** | Restart sem retentativa, `OUTCOME_UNKNOWN` quando a conexão cai após o pedido, verificação `UNHEALTHY` sem `FAILED`, e um teste de ponta a ponta com o fake + scripted + aprovação. O proxy real permite o restart e continua bloqueando `exec`/`create`. |
 
+**Resultado da fatia 8** ([detalhes](fatias/08-restart.md)): `restartContainer` com a verificação dentro da
+ferramenta (só conta como reiniciado se o `StartedAt` mudou), `SUCCEEDED` + `RESTART_UNVERIFIED` quando o serviço
+não volta saudável, e `OUTCOME_UNKNOWN` sem retentativa quando a conexão cai depois do pedido. O proxy libera o
+restart (`ALLOW_RESTARTS=1`), e o CI prova que `start`/`create`/`exec` continuam `403` (`stop`/`kill` passam: risco
+residual da ADR-011). Auditoria com os filtros `toolName`, `agentExecutionId` e `toolExecutionId` (RF-45) e
+`GET /tool-executions/{id}`, que responde quem pediu, o que foi observado, por quê, quem aprovou, quando e o
+resultado (RF-46, H3). **O roteiro do documento 01 §5 rodou completo no compose com o `scripted`**. A rodada com
+a OpenAI fica para a sua máquina, sem forçar o modelo a propor o restart.
+
 ### Fatia 9 — Fechamento do MVP
 
 **Prova:** as hipóteses do documento 01 foram testadas, e o projeto é apresentável.

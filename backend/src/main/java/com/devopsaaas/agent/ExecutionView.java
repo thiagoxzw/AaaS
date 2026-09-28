@@ -37,9 +37,12 @@ public record ExecutionView(
     public record Answer(String text, boolean complete) {
     }
 
-    /** {@code target} is the logical service name, never the container name. */
-    public record Action(int seq, String tool, String target, RiskLevel risk, String status, String denialReason,
-            String errorCode, Long durationMs) {
+    /**
+     * {@code target} is the logical service name, never the container name. {@code toolExecutionId} leads to
+     * {@code GET /api/v1/tool-executions/{id}}, the explanation of the call (slice 8).
+     */
+    public record Action(UUID toolExecutionId, int seq, String tool, String target, RiskLevel risk, String status,
+            String denialReason, String errorCode, Long durationMs) {
     }
 
     public record Budget(int toolCalls, int maxToolCalls, int llmIterations, int maxLlmIterations, long activeMs,

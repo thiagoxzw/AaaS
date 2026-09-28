@@ -82,7 +82,8 @@ class ToolExecutionJournal {
             events.publishEvent(new ToolCallAwaitingApproval(request.context().organizationId(),
                     request.agentExecutionId(), execution.getId(), request.context().requestedBy(),
                     execution.getToolName(), execution.getRiskLevel(), execution.getArgumentsHash(),
-                    impact == null || impact.isBlank() ? NO_IMPACT_DESCRIPTION : impact, execution.getRationale()));
+                    impact == null || impact.isBlank() ? NO_IMPACT_DESCRIPTION : impact,
+                    justification(decision, execution)));
             return execution;
         });
     }
@@ -124,6 +125,17 @@ class ToolExecutionJournal {
                     .detail("approved", true));
             return new Claimed(execution, request, decision);
         });
+    }
+
+    /**
+     * Slice 8: a tool may declare which argument carries the model's justification (restartContainer's
+     * {@code reason}). Being an argument, it is part of the hash the human approves; otherwise the turn's text.
+     */
+    private static String justification(PolicyDecision decision, ToolExecution execution) {
+        return decision.argument(decision.tool().definition().justificationParameter())
+                .filter(value -> !value.isBlank())
+                .map(value -> OutputProcessor.cleanText(value, MAX_TEXT_CHARS))
+                .orElse(execution.getRationale());
     }
 
     private DeniedNow deniedNow(ToolExecutionRequest request, ToolExecution execution, DenialReason reason,

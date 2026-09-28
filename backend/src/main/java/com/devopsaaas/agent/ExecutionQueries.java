@@ -68,7 +68,7 @@ public class ExecutionQueries {
     }
 
     private static ExecutionView.Action action(ToolCallRecord call, Map<UUID, String> serviceNames) {
-        return new ExecutionView.Action(call.seq(), call.toolName(),
+        return new ExecutionView.Action(call.id(), call.seq(), call.toolName(),
                 call.targetServiceId() == null ? null : serviceNames.get(call.targetServiceId()),
                 call.riskLevel(), call.status().name(),
                 call.denialReason() == null ? null : call.denialReason().name(),

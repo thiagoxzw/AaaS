@@ -5,6 +5,7 @@ import com.devopsaaas.audit.AuditResourceType;
 import com.devopsaaas.shared.security.CurrentUser;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.UUID;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -33,11 +34,15 @@ class AuditEventController {
             @RequestParam(required = false) AuditResourceType resourceType,
             @RequestParam(required = false) UUID resourceId,
             @RequestParam(required = false) UUID actorUserId,
+            @RequestParam(required = false) @Size(max = 100) String toolName,
+            @RequestParam(required = false) UUID agentExecutionId,
+            @RequestParam(required = false) UUID toolExecutionId,
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "50") @Min(1) @Max(200) int size) {
         return AuditPageResponse.from(
-                auditQuery.search(user, resourceType, resourceId, actorUserId, from, to, page, size));
+                auditQuery.search(user, new AuditQuery.Filter(resourceType, resourceId, actorUserId, toolName,
+                        agentExecutionId, toolExecutionId), from, to, page, size));
     }
 }

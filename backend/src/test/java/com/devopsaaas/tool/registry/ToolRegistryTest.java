@@ -89,6 +89,12 @@ class ToolRegistryTest {
         assertInvalid(tool(builder -> builder.targetParameter("container")), "targetParameter 'container'");
     }
 
+    /** Slice 8: the argument shown to the approver as the justification must exist and be text. */
+    @Test
+    void justificationParameterThatIsNotAStringComponent_preventsStartup() {
+        assertInvalid(tool(builder -> builder.justificationParameter("reason")), "justificationParameter 'reason'");
+    }
+
     @Test
     void timeoutOutsideLimits_preventsStartup() {
         assertInvalid(tool(builder -> builder.timeout(Duration.ofMinutes(10))), "timeout must be between");

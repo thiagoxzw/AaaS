@@ -16,9 +16,9 @@
 | [6](docs/fatias/06-llm-real.md) | LLM real: adapter da OpenAI (Responses API), custo por execução e orçamento diário. O padrão continua `scripted` |
 | [6.1](docs/fatias/06-1-dados-atuais.md) | Dados atuais para o diagnóstico: logs só da execução atual por padrão e `health` só com o container rodando, a partir da primeira medição de H2 |
 | [7](docs/fatias/07-aprovacao.md) | Aprovação humana: ações de risco param em `WAITING_APPROVAL`, uma pessoa com `APPROVAL_DECIDE` aprova ou rejeita pela API, e a execução retoma com a chamada **exata** que foi aprovada, depois de reavaliar a política |
+| [8](docs/fatias/08-restart.md) | `restartContainer` de ponta a ponta: diagnóstico → proposta → aprovação → restart → verificação determinística → auditoria, e `GET /tool-executions/{id}` para responder quem pediu, quem aprovou, quando, por quê e com que resultado |
 
-As ações com efeito (restart) chegam na fatia 8, já passando pela aprovação da fatia 7. O README completo (exemplos, screenshots, API)
-será escrito conforme o sistema for construído.
+A fatia 9 fecha o MVP. O README completo (exemplos, screenshots, API) será escrito nela.
 
 ## Como executar (estado atual)
 
@@ -56,10 +56,22 @@ EXEC=$(curl -s -X POST localhost:8080/api/v1/conversations/$CONV/messages -H "Au
   --data-binary @- <<<'{"content":"o demo-api está de pé?"}' | jq -r .executionId)     # 202 Accepted
 curl -s localhost:8080/api/v1/executions/$EXEC -H "Authorization: Bearer $TOKEN"   # status, resposta e actions[]
 
-# Aprovações (fatia 7). No compose, só aparecem a partir da fatia 8, com o restartContainer.
+# Restart com aprovação (fatia 8). Com o scripted, o roteiro demo-fix entra quando a pergunta pede para
+# reiniciar ou consertar: status → logs → proposta de restartContainer, que para em WAITING_APPROVAL.
+curl -s -X POST localhost:8090/chaos/unhealthy
+EXEC=$(curl -s -X POST localhost:8080/api/v1/conversations/$CONV/messages -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data-binary @- <<<'{"content":"Por que minha API está fora do ar? Se precisar, reinicie."}' | jq -r .executionId)
 curl -s "localhost:8080/api/v1/approvals?status=PENDING" -H "Authorization: Bearer $TOKEN"
+curl -s localhost:8080/api/v1/approvals/<APPROVAL_ID> -H "Authorization: Bearer $TOKEN"  # system × agentClaims
 curl -s -X POST localhost:8080/api/v1/approvals/<APPROVAL_ID>/decision -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' --data-binary @- <<<'{"decision":"APPROVE","comment":"ok"}'
+curl -s localhost:8080/api/v1/executions/$EXEC -H "Authorization: Bearer $TOKEN"   # actions[].toolExecutionId
+# Quem pediu, o que foi observado, por quê, quem aprovou, quando e o resultado (com a verificação):
+curl -s localhost:8080/api/v1/tool-executions/<TOOL_EXECUTION_ID> -H "Authorization: Bearer $TOKEN"
+# "Quem reiniciou o demo-api?"
+curl -s "localhost:8080/api/v1/audit-events?resourceType=SERVICE&resourceId=<SERVICE_ID>&toolName=restartContainer" \
+  -H "Authorization: Bearer $TOKEN"
 
 # Caos na demo-api (sem autenticação de propósito; só em 127.0.0.1)
 curl -s -X POST localhost:8090/chaos/unhealthy     # health DOWN

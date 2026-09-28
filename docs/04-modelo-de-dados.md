@@ -460,6 +460,12 @@ lentas.
 
 ### "Quem mandou o agente reiniciar o `demo-api`?"
 
+> **Implementado na fatia 8** pela API, sem SQL: `GET /api/v1/audit-events?resourceType=SERVICE&resourceId=…&toolName=restartContainer`
+> (filtros novos: `toolName`, `agentExecutionId` e `toolExecutionId`, RF-45). Quem aprovou não está nos
+> `details` do evento da ferramenta, como a consulta abaixo supunha: está no evento `APPROVAL_GRANTED`, com
+> `actor_user_id` e o `toolExecutionId` da chamada, e na explicação da ação (próxima pergunta). Não criei índice
+> novo: `toolName` e `toolExecutionId` filtram dentro dos índices por recurso, por execução ou por período.
+
 Consulta ilustrativa (a versão final fica no repositório de auditoria):
 
 ```sql
@@ -492,6 +498,14 @@ A partir da `tool_execution` do restart:
 6. **O resultado**: o `status`, o `output` e a `duration_ms` do restart, e a verificação seguinte.
 
 Tudo isso é exposto por um endpoint de linha do tempo da execução. O contrato fica no documento da API.
+
+> **Implementado na fatia 8** como `GET /api/v1/tool-executions/{id}` (RF-46, H3), com `EXECUTION_READ` e
+> sempre na organização de quem pergunta (`404` para outra). Cobre os itens 1, 3, 5 e 6: o pedido
+> (`request`), as chamadas anteriores e os seus achados (`observations`), o `rationale` da chamada
+> (`agentClaims`, sempre `trusted: false`), a aprovação no contrato do documento 05 §13, o resultado com a
+> verificação, e a trilha de auditoria da chamada com quem fez cada passo. Ficam de fora o `context_snapshot` e o
+> `autonomy_level` (item 2 e parte do 5), que continuam em `GET /executions/{id}`. Detalhes em
+> [fatias/08-restart.md](fatias/08-restart.md).
 
 ## 9. Onde cada tipo de dado vive
 

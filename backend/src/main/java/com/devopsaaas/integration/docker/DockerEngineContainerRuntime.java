@@ -61,9 +61,14 @@ public class DockerEngineContainerRuntime implements ContainerRuntime {
 
     private static final Logger log = LoggerFactory.getLogger(DockerEngineContainerRuntime.class);
     private static final String NO_DATE = "0001-01-01T00:00:00Z";
+    /** Longest graceful stop a restart may ask for; the restart's read timeout is this plus the margin. */
+    static final Duration MAX_GRACEFUL_STOP = Duration.ofSeconds(30);
+    static final Duration RESTART_MARGIN = Duration.ofSeconds(30);
 
     private final RuntimeConnectionProperties.Docker settings;
     private final Map<String, RestClient> clients = new LinkedHashMap<>();
+    /** Per connection, the same HTTP client with a longer read timeout, for the restart only (slice 8). */
+    private final Map<String, RestClient> restartClients = new LinkedHashMap<>();
     private final List<HttpClient> httpClients;
     private final String apiPrefix;
     private final MeterRegistry meters;
@@ -91,6 +96,14 @@ public class DockerEngineContainerRuntime implements ContainerRuntime {
             clients.put(name, RestClient.builder()
                     .baseUrl(connection.dockerUrl().toString())
                     .requestFactory(factory)
+                    .build());
+            // POST /restart answers only when the container is back: it takes up to the graceful stop timeout
+            // plus the start. With the normal read timeout every restart would end as OUTCOME_UNKNOWN.
+            JdkClientHttpRequestFactory restartFactory = new JdkClientHttpRequestFactory(httpClient);
+            restartFactory.setReadTimeout(MAX_GRACEFUL_STOP.plus(RESTART_MARGIN));
+            restartClients.put(name, RestClient.builder()
+                    .baseUrl(connection.dockerUrl().toString())
+                    .requestFactory(restartFactory)
                     .build());
         });
         this.httpClients = List.copyOf(created);
@@ -152,7 +165,10 @@ public class DockerEngineContainerRuntime implements ContainerRuntime {
 
     @Override
     public void restart(ContainerRef ref, Duration gracefulStopTimeout) {
-        call("restart", ref.connectionRef(), client -> client.post()
+        if (gracefulStopTimeout.isNegative() || gracefulStopTimeout.compareTo(MAX_GRACEFUL_STOP) > 0) {
+            throw new IllegalArgumentException("The graceful stop timeout must be between 0 and " + MAX_GRACEFUL_STOP);
+        }
+        call("restart", ref.connectionRef(), restartClients, client -> client.post()
                 .uri(apiPrefix + "/containers/{name}/restart?t={seconds}", ref.containerName(),
                         gracefulStopTimeout.toSeconds())
                 .exchange((request, response) -> {
@@ -198,10 +214,15 @@ public class DockerEngineContainerRuntime implements ContainerRuntime {
         throw new ContainerRuntimeException(category, "Docker API answered HTTP " + status.value());
     }
 
+    private <T> T call(String operation, String connectionRef, Function<RestClient, T> request) {
+        return call(operation, connectionRef, clients, request);
+    }
+
     @SuppressFBWarnings(value = "CRLF_INJECTION_LOGS", justification = "operation is one of this class's own "
             + "literals (inspect, logs, restart, version); logs are JSON-encoded as well")
-    private <T> T call(String operation, String connectionRef, Function<RestClient, T> request) {
-        RestClient client = clients.get(connectionRef);
+    private <T> T call(String operation, String connectionRef, Map<String, RestClient> pool,
+            Function<RestClient, T> request) {
+        RestClient client = pool.get(connectionRef);
         Timer.Sample sample = Timer.start(meters);
         String outcome = "success";
         try {

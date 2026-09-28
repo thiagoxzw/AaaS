@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # ADR-011: only docker-socket-proxy may mount the Docker socket, the proxy may not publish ports, it may not
-# allow POST globally, and no service may keep stdin open (the proxy cannot block websocket attach, see
-# docs/06-threat-model.md).
+# allow POST globally, it may turn on nothing beyond reading containers and logs and restarting them (slice 8),
+# and no service may keep stdin open (the proxy cannot block websocket attach, see docs/06-threat-model.md).
 set -eu
 
 config=$(docker compose config --format json)
@@ -33,6 +33,18 @@ if [ "$post" != "0" ]; then
   failed=1
 fi
 
+# Allowlist: every proxy setting turned on must be one of these. Anything else (EXEC, IMAGES, ALLOW_START,
+# VOLUMES, BUILD...) fails the check, whatever its name.
+allowed="CONTAINERS ALLOW_LOGS ALLOW_RESTARTS PING VERSION DISABLE_IPV6"
+enabled=$(echo "$config" | jq -r '.services["docker-socket-proxy"].environment // {} | to_entries[]
+          | select((.value | tostring) == "1") | .key')
+for setting in $enabled; do
+  case " $allowed " in
+    *" $setting "*) ;;
+    *) echo "docker-socket-proxy turns on $setting, which is not in the allowlist ($allowed)" >&2; failed=1 ;;
+  esac
+done
+
 internal=$(echo "$config" | jq -r '.networks["docker-proxy"].internal // false')
 if [ "$internal" != "true" ]; then
   echo "The docker-proxy network must be internal" >&2
@@ -45,5 +57,5 @@ if [ -n "$stdin" ]; then
   failed=1
 fi
 
-[ "$failed" -eq 0 ] && echo "OK: only docker-socket-proxy mounts the socket (read-only), without ports, POST=0, internal network"
+[ "$failed" -eq 0 ] && echo "OK: only docker-socket-proxy mounts the socket (read-only), without ports, POST=0, only allowlisted settings, internal network"
 exit "$failed"

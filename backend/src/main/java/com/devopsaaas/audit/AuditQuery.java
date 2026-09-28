@@ -23,7 +23,22 @@ public class AuditQuery {
     @Transactional(readOnly = true)
     public Page<AuditEvent> search(CurrentUser user, AuditResourceType resourceType, UUID resourceId,
             UUID actorUserId, Instant from, Instant to, int page, int size) {
-        return events.search(user.organizationId(), resourceType, resourceId, actorUserId,
+        return search(user, new Filter(resourceType, resourceId, actorUserId, null, null, null), from, to, page,
+                size);
+    }
+
+    /**
+     * RF-45, slice 8: by resource, user, tool, execution and period. "Who restarted demo-api?" is
+     * {@code resourceType=SERVICE, resourceId=<service>, toolName=restartContainer}.
+     */
+    public record Filter(AuditResourceType resourceType, UUID resourceId, UUID actorUserId, String toolName,
+            UUID agentExecutionId, UUID toolExecutionId) {
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AuditEvent> search(CurrentUser user, Filter filter, Instant from, Instant to, int page, int size) {
+        return events.search(user.organizationId(), filter.resourceType(), filter.resourceId(), filter.actorUserId(),
+                filter.toolName(), filter.agentExecutionId(), filter.toolExecutionId(),
                 from != null ? from : OPEN_START, to != null ? to : OPEN_END,
                 PageRequest.of(page, size));
     }
