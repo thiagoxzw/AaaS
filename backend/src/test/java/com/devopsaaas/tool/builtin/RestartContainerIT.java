@@ -218,6 +218,17 @@ class RestartContainerIT extends AgentTestSupport {
         assertThat(toolAndStatus(restart)).isEqualTo("restartContainer:DENIED");
         assertThat(restart.get("denialReason").asString()).isEqualTo("ARGUMENTS_MISMATCH");
         assertThat(restarts()).isZero();
+        // The exact cause. The call's hash column still equals the approval's copy (the first of the three
+        // checks passes); what fails is binding the STORED, masked arguments again: their hash differs from
+        // the hash of the arguments as proposed. The control case, a reason without anything secret-like, is
+        // anApprovedRestart_restartsOnce_isVerified_andCanBeExplained.
+        Map<String, Object> call = jdbc.queryForMap("SELECT t.arguments_hash AS call_hash, a.arguments_hash AS "
+                + "approved_hash, t.arguments::text AS stored, t.error_message FROM tool_execution t "
+                + "JOIN approval a ON a.tool_execution_id = t.id WHERE t.id = ?::uuid",
+                restart.get("toolExecutionId").asString());
+        assertThat(call.get("call_hash")).isEqualTo(call.get("approved_hash"));
+        assertThat((String) call.get("stored")).contains("<redacted").doesNotContain("rejected'");
+        assertThat(call.get("error_message")).isEqualTo("The recorded arguments no longer match what was approved.");
     }
 
     /**
@@ -354,7 +365,12 @@ class RestartContainerIT extends AgentTestSupport {
         assertThat(toolAndStatus(restart)).isEqualTo("restartContainer:DENIED");
         assertThat(restart.get("denialReason").asString()).isEqualTo("INVALID_ARGUMENTS");
         assertThat(finished.get("approvals").isEmpty()).isTrue();
-        assertThat(restarts()).isZero();
+        assertThat(count("SELECT count(*) FROM approval WHERE agent_execution_id = ?::uuid",
+                finished.get("executionId").asString())).isZero();
+        // No tool ran at all: the runtime never heard of this container.
+        assertThat(runtime.callsFor(container)).isZero();
+        assertThat(actions(finished)).extracting(RestartContainerIT::toolAndStatus)
+                .containsExactly("restartContainer:DENIED");
     }
 
     @Test

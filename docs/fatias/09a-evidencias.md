@@ -18,11 +18,35 @@ de ser corrigido.
 
 | # | Achado | Muda o modelo de segurança? | Estado |
 |---|---|---|---|
-| 9a-01 | **Argumento mascarado × hash.** O hash cobre os argumentos como foram propostos; o que se grava (e se vincula de novo na retomada) é a cópia mascarada. Um `reason` que cite algo parecido com segredo (`password: rejected`) chega mascarado ao aprovador e, depois de aprovado, vira `DENIED/ARGUMENTS_MISMATCH`. | Não: falha fechado, e um argumento mascarado nunca é executado. Mas uma aprovação legítima é desperdiçada. | Aguardando decisão |
+| 9a-01 | **Argumento mascarado × hash (reproduzido).** Um `reason` que cite algo parecido com segredo (`password: rejected`) chega mascarado ao aprovador e, depois de aprovado, vira `DENIED/ARGUMENTS_MISMATCH`, com zero restarts. Causa exata logo abaixo da tabela. | Não: falha fechado, e um argumento mascarado nunca é executado. Mas uma aprovação legítima é desperdiçada. | Aguardando decisão |
 | 9a-02 | **Valor de campo mapeado em mensagem do Jackson.** Com o `INCLUDE_SOURCE_IN_LOCATION` desligado, o trecho do corpo não aparece; mas quando um campo **mapeado** do `inspect` vem com tipo errado, a mensagem cita o valor desse campo, e ela vai para o log de aviso do adapter. O `Env` não é mapeado e não aparece. | Não: os campos mapeados (`Status`, `ExitCode`, `OOMKilled`, `StartedAt`, `FinishedAt`, `Health.Status`, `Image`, `RestartCount`) são gerados pelo próprio Docker. | Aguardando decisão |
 | 9a-03 | **As transições de `ToolExecution` não têm guarda na entidade.** `AgentExecution` e `Approval` recusam uma transição inválida (`IllegalStateException`); `ToolExecution` depende de quem a chama. Hoje todo chamador confere o estado sob o *lock* da linha (`claimApproved`, `closeWaiting`), roda só na subida (`recoverInterrupted`) ou é protegido pelo `@Version` (`cancelAwaitingApproval`). | Não: nenhum caminho inválido foi encontrado. É defesa em profundidade. | Aguardando decisão |
 | 9a-04 | **O threat model citava cerca de 30 testes que não existem**, com os nomes planejados no desenho. As proteções existiam sob outros nomes, exceto duas **provas** que faltavam: TM-B1-06 (o `500` não vaza detalhes) e TM-B1-08 (a matriz de autorização cobria só os 5 endpoints da fatia 1). | Não: todos os 21 handlers têm `@PreAuthorize` e a cadeia exige autenticação por padrão. | **Resolvido nesta etapa:** nomes corrigidos no documento 06; `AuthorizationMatrixIT.everyApiHandler_declaresExactlyThePermissionOfTheSpecification` e a asserção do `500` acrescentadas |
 | 9a-05 | **Um cancelamento que perde a corrida para a retomada recebe `409`** ("modificado concorrentemente, recarregue"), e o restart que já começou não é desfeito. | Não: é o `@Version` fazendo o seu trabalho; o cliente pode repetir o cancelamento. | Documentado |
+
+### Causa exata do 9a-01
+
+Reproduzido em `RestartContainerIT.aReasonThatLooksLikeASecret_isMaskedForTheApprover_andTheApprovedCallFailsClosed`,
+com o roteiro `test-restart-masked-reason`:
+
+1. `PolicyEngine` vincula os argumentos **como propostos** e calcula o hash sobre a forma canônica deles
+   (`decision.argumentsHash()`).
+2. `ToolExecutionJournal.newExecution` grava em `tool_execution.arguments` a cópia **mascarada**
+   (`OutputProcessor.processArguments`: sanitização + `SecretRedactor`), e em `arguments_hash` o hash do passo 1.
+   A aprovação copia esse mesmo hash.
+3. Na retomada, `ToolExecutionJournal.claimApproved` compara o hash da aprovação com o `arguments_hash` da
+   chamada, e eles **são iguais**: a primeira verificação passa. Depois vincula de novo os argumentos
+   **gravados** (mascarados) e compara o hash deles com o da aprovação. **Eles diferem**, e a chamada vira
+   `DENIED/ARGUMENTS_MISMATCH` com a mensagem "The recorded arguments no longer match what was approved."
+
+O teste afirma cada um desses pontos: hashes da chamada e da aprovação iguais, argumentos gravados com
+`<redacted`, a mensagem da segunda verificação, zero restarts. O caso de controle é o mesmo fluxo com um
+`reason` sem nada parecido com segredo, que executa normalmente (`anApprovedRestart_restartsOnce_…`).
+
+**O que dispara:** qualquer argumento `String` que a sanitização ou o mascaramento alterem: os padrões do
+`SecretRedactor` (`password:`, `token=`, `Bearer …`, JWTs, chaves), `\r`, caracteres de controle e caracteres
+invisíveis (que viram `<U+200B>`). Hoje o único argumento livre de uma ferramenta que exige aprovação é o
+`reason` do `restartContainer`.
 
 ### Opções para os achados em aberto
 
@@ -41,61 +65,85 @@ de ser corrigido.
 
 ## 1. Máquinas de estado (extraídas do código)
 
+Formato: **estado atual → evento → estado seguinte → condição → teste**. Um estado terminal não tem saída.
+
 ### Execução do agente (`AgentExecution`)
 
-```
-QUEUED ──start──► RUNNING ──waitForApproval──► WAITING_APPROVAL
-                     ▲                               │
-                     └──────resumeAfterApproval──────┘
-RUNNING ──finish──► COMPLETED | FAILED | BUDGET_EXCEEDED | INTERRUPTED (recuperação)
-QUEUED | RUNNING | WAITING_APPROVAL ──cancel──► CANCELLED
-```
-
-| Transição | De | Onde | Proteção |
-|---|---|---|---|
-| `start` | `QUEUED` | worker | `require` na entidade + *lock* da linha |
-| `waitForApproval` | `RUNNING` | loop, quando alguma chamada ficou `WAITING_APPROVAL` | idem |
-| `resumeAfterApproval` | `WAITING_APPROVAL` | retomada (evento pós-commit ou varredura), só sem aprovação `PENDING` | idem; condicional, então duas retomadas não passam |
-| `finish` | `RUNNING` | fim do loop, erro, orçamento, recuperação (`INTERRUPTED`) | idem; só aceita estado terminal |
-| `cancel` | qualquer ativo | `POST /executions/{id}/cancel` | idem; cancela junto as aprovações pendentes e as chamadas em espera |
-
-**Prova:** `AgentExecutionTest.theTransitionTable` percorre os 8 estados × 5 transições (40 casos). Só as
-transições acima passam; todas as outras, repetições incluídas, lançam `IllegalStateException`, e o estado
-não muda.
+| Estado atual | Evento | Estado seguinte | Condição | Teste |
+|---|---|---|---|---|
+| `QUEUED` | um worker pega a execução | `RUNNING` | vaga no dispatcher; `require(QUEUED)` na entidade | `AgentIT.aQuestion_runsTheLoop_andEverythingIsRecorded` |
+| `QUEUED` | o backend sobe depois de uma queda | `QUEUED` (despachada de novo) | recuperação na subida | `AgentRecoveryIT` |
+| `RUNNING` | alguma chamada da volta ficou `WAITING_APPROVAL` | `WAITING_APPROVAL` | `require(RUNNING)` | `AgentIT.aRiskyProposal_waitsForApproval_whateverTheModelClaims` |
+| `WAITING_APPROVAL` | a última aprovação `PENDING` foi decidida ou venceu | `RUNNING` | transição condicional sob *lock*; nenhuma aprovação `PENDING` | `ApprovalIT.anApprovedCall_…`, `twoRiskyCallsInOneTurn_resumeOnlyWhenBothAreDecided`, `theSweep_expiresWhatIsDue_once_andResumesTheExecution` |
+| `WAITING_APPROVAL` | o backend sobe depois de uma queda | `WAITING_APPROVAL` | nada a fazer: espera um humano | `AgentRecoveryIT`, `ApprovalIT.aWaitingExecution_survivesARestart_…` |
+| `RUNNING` | o modelo responde sem pedir ferramenta | `COMPLETED` | `require(RUNNING)` | `AgentIT.aQuestion_runsTheLoop_…` |
+| `RUNNING` | erro do LLM, resposta vazia, ambiente indisponível, erro interno | `FAILED` | idem | `AgentIT.aFailingModel_endsTheExecutionAsFailed_withAClearReason`, `anEmptyAnswer_isAFailure` |
+| `RUNNING` | orçamento de chamadas, iterações ou custo esgotado | `BUDGET_EXCEEDED` | idem | `AgentIT.s8_…` (2 testes) |
+| `RUNNING` | o backend sobe depois de uma queda | `INTERRUPTED` | recuperação; as chamadas `RUNNING` viram `OUTCOME_UNKNOWN` e as em espera `CANCELLED` | `AgentRecoveryIT`, `RestartContainerIT.aCrashDuringTheVerification_…`, `anApprovedCallNotYetTakenWhenTheBackendDies_…` |
+| `QUEUED`, `RUNNING`, `WAITING_APPROVAL` | `POST /executions/{id}/cancel` | `CANCELLED` | só quem criou; *lock* da linha; `@Version` | `AgentIT.cancellingDuringAModelCall_…`, `cancellingAnExecutionWaitingForApproval_cancelsThePendingCall` |
+| qualquer terminal | qualquer transição | — (recusada) | `IllegalStateException`, e o estado não muda | `AgentExecutionTest.theTransitionTable` (8 estados × 5 transições = 40 casos) |
 
 ### Chamada de ferramenta (`ToolExecution`)
 
-```
-PROPOSED ─┬─ política nega ────────────────► DENIED
-          ├─ política permite ─► RUNNING ───► SUCCEEDED | FAILED | TIMED_OUT (só leitura)
-          │    (gravado antes da chamada externa)      | OUTCOME_UNKNOWN (efeito colateral)
-          ├─ sem vaga no executor ─────────► FAILED (CAPACITY_EXCEEDED)
-          └─ exige aprovação ─► WAITING_APPROVAL ─┬─ aprovada + hashes + política agora ─► RUNNING
-                                                 ├─ hash diferente ou política nega ─► DENIED
-                                                 ├─ rejeitada ─► REJECTED
-                                                 ├─ vencida ─► EXPIRED
-                                                 └─ execução cancelada ou interrompida ─► CANCELLED
-RUNNING deixado por uma queda ─► OUTCOME_UNKNOWN (recuperação na subida)
-```
+A chamada nasce `PROPOSED` e, **na mesma transação**, sai para um dos estados abaixo.
 
-**Não existe caminho para `RUNNING` que não passe pela política agora.** Ou a política permite na
-proposta (`READ_ONLY`), ou a chamada sai de `WAITING_APPROVAL` por `claimApproved`, sob o *lock* da linha,
-depois de comparar os hashes e reavaliar a política. `OUTCOME_UNKNOWN` e todos os outros estados finais são
-terminais: nada os lê para executar de novo (provado na seção 4). As guardas estão nos chamadores, não na
-entidade (achado 9a-03).
+| Estado atual | Evento | Estado seguinte | Condição | Teste |
+|---|---|---|---|---|
+| `PROPOSED` | a política nega | `DENIED` | o primeiro passo da política que falhar dá o motivo | `AgentIT.s1_…`, `s2_…`, `s7_…`, `RestartContainerIT.anApprovalClaimedInsideTheArguments_…` |
+| `PROPOSED` | a política permite | `RUNNING` | vaga no executor; **gravado e commitado antes da chamada externa** | `ToolExecutorIT.executionIsCommittedAsRunning_beforeTheToolIsCalled` |
+| `PROPOSED` | a política permite, sem vaga no executor até o timeout | `FAILED` (`CAPACITY_EXCEEDED`) | a ferramenta não é chamada | `ToolExecutorCapacityTest.withoutAFreeSlot_theCallFailsAsCapacityExceeded_andTheToolNeverRuns` |
+| `PROPOSED` | a política exige aprovação | `WAITING_APPROVAL` | a aprovação `PENDING` nasce na mesma transação | `ToolExecutorIT.highRiskCall_waitsForApproval_andIsNotExecuted` |
+| `WAITING_APPROVAL` | aprovação `APPROVED` + retomada | `RUNNING` | *lock* da linha, ainda `WAITING_APPROVAL`, hash da aprovação = hash da chamada = hash dos argumentos gravados vinculados de novo, política permite **agora** | `ApprovalIT.anApprovedCall_runsExactlyAsRecorded_…` |
+| `WAITING_APPROVAL` | aprovação `APPROVED`, mas um hash difere | `DENIED` (`ARGUMENTS_MISMATCH`) | idem, falhando na comparação | `ApprovalIT.storedArgumentsChangedAfterTheProposal_…`, `aChangedCallHash_…`, `RestartContainerIT.aReasonThatLooksLikeASecret_…` |
+| `WAITING_APPROVAL` | aprovação `APPROVED`, mas a política nega agora | `DENIED` (motivo atual) | idem | `ApprovalIT.s11_…` |
+| `WAITING_APPROVAL` | aprovação `REJECTED` | `REJECTED` | na transação da decisão, sob o *lock* da chamada | `ApprovalIT.aRejectedCall_neverRuns_…` |
+| `WAITING_APPROVAL` | aprovação `EXPIRED` | `EXPIRED` | idem | `ApprovalIT.aLateDecision_findsTheApprovalExpired`, `theSweep_…` |
+| `WAITING_APPROVAL` | execução cancelada ou interrompida | `CANCELLED` | na transação do cancelamento ou da recuperação; `@Version` contra a retomada | `ApprovalIT.cancellingTheExecution_cancelsItsApprovals`, `RestartContainerIT.anApprovedCallNotYetTakenWhenTheBackendDies_…` |
+| `RUNNING` | a ferramenta devolve sucesso | `SUCCEEDED` | — | `RestartContainerIT.anApprovedRestart_…` e muitos outros |
+| `RUNNING` | falha conhecida (alvo inexistente, `403` do proxy, runtime fora antes de enviar) | `FAILED` | sabe-se que o efeito não aconteceu | `ContainerToolsIT.getContainerStatus_ofAMissingContainer_failsAsTargetNotFound`, `RestartContainerToolTest.anUnreachableRuntimeBeforeTheRestart_…` |
+| `RUNNING` | timeout de ferramenta só de leitura | `TIMED_OUT` | sem efeito colateral | `ToolExecutorIT.readOnlyTimeout_endsAsTimedOut` |
+| `RUNNING` | timeout ou exceção depois do envio, com efeito colateral | `OUTCOME_UNKNOWN` | nunca retentado | `ToolExecutorIT.sideEffectTimeout_endsAsOutcomeUnknown_andIsNeverRetried`, `RestartContainerIT.theConnectionDroppingAfterTheRequest_…` |
+| `RUNNING` | o backend sobe depois de uma queda | `OUTCOME_UNKNOWN` | recuperação na subida | `AgentRecoveryIT`, `RestartContainerIT.aCrashDuringTheVerification_…` |
+| qualquer terminal | recuperação, varredura, retomada | — (nada muda, nada roda) | as consultas filtram por `RUNNING` ou `WAITING_APPROVAL` | `RestartContainerIT.anUnknownOutcome_survivesRecoveryAndTheSweep_withoutASecondRestart` |
+
+**Não existe caminho para `RUNNING` que não passe pela política agora.** As guardas estão nos chamadores,
+não na entidade (achado 9a-03): por isso esta tabela é provada por testes de integração, e não por uma
+tabela unitária como as outras duas.
 
 ### Aprovação (`Approval`)
 
+| Estado atual | Evento | Estado seguinte | Condição | Teste |
+|---|---|---|---|---|
+| (nenhum) | a chamada fica `WAITING_APPROVAL` | `PENDING` | mesma transação da chamada | `ToolExecutorIT.highRiskCall_waitsForApproval_andIsNotExecuted` |
+| `PENDING` | `APPROVE` | `APPROVED` | `APPROVAL_DECIDE` agora, dentro do prazo, *lock* da linha, auditoria na mesma transação | `ApprovalIT.anApprovedCall_…`, `theDecisionAndItsAuditEvent_areAtomic` |
+| `PENDING` | `REJECT` | `REJECTED` | idem | `ApprovalIT.aRejectedCall_neverRuns_…` |
+| `PENDING` | prazo vencido (varredura ou decisão atrasada) | `EXPIRED` | *lock* da linha; a decisão atrasada recebe `409` | `ApprovalIT.aLateDecision_…`, `theSweep_…` |
+| `PENDING` | execução cancelada ou interrompida | `CANCELLED` | na transação do cancelamento | `ApprovalIT.cancellingTheExecution_cancelsItsApprovals` |
+| qualquer outro | qualquer transição | — (recusada) | `IllegalStateException` na entidade; `409` na API | `ApprovalTest.theTransitionTable` (5 × 4 = 20 casos), `ApprovalIT.anApproval_cannotBeDecidedTwice` |
+
 | Estado | Pode ser decidida? | A chamada pode executar? | Pode expirar? | Pode ser cancelada? |
 |---|---|---|---|---|
-| `PENDING` | sim, por quem tem `APPROVAL_DECIDE` agora, dentro do prazo | não | sim (varredura ou decisão atrasada) | sim, junto com a execução |
-| `APPROVED` | não (`409`) | **uma vez**, depois dos hashes nos 3 pontos e da política reavaliada | não | a aprovação fica `APPROVED`; se o cancelamento da execução chegar antes da retomada, a **chamada** vira `CANCELLED` e não roda |
-| `REJECTED` | não | não | não | não |
-| `EXPIRED` | não | não | não | não |
-| `CANCELLED` | não | não | não | não |
+| `PENDING` | sim | não | sim | sim, com a execução |
+| `APPROVED` | não | **uma vez**, depois dos 3 hashes e da política agora | não | a aprovação fica `APPROVED`; se o cancelamento chegar antes da retomada, a **chamada** vira `CANCELLED` e não roda |
+| `REJECTED`, `EXPIRED`, `CANCELLED` | não | não | não | não |
 
-**Prova:** `ApprovalTest.theTransitionTable` percorre os 5 estados × 4 transições (20 casos). Só `PENDING`
-muda. As corridas estão na seção 2 (TM-B7-03).
+### As corridas como máquina de estados
+
+Três eventos disputam a mesma chamada em `WAITING_APPROVAL`: a decisão humana, a expiração e o
+cancelamento da execução. **Só uma transição vence, e nada executa depois de um estado terminal
+incompatível.**
+
+| Corrida | O que serializa | Desfechos possíveis | Invariante provado | Teste |
+|---|---|---|---|---|
+| decisão × decisão (8 em paralelo) | *lock* da aprovação | exatamente uma `200`, as outras `409` | 1 `APPROVAL_GRANTED`, **1** restart | `ApprovalIT.s10_…` |
+| retomada × retomada (4 em paralelo) | transições condicionais da execução e da chamada | uma retomada pega a chamada; as outras não encontram `WAITING_APPROVAL` | **1** restart | `ApprovalIT.s10_…` |
+| decisão × cancelamento | *lock* da aprovação; `@Version` da chamada e da execução | (a) cancelamento primeiro: aprovação `CANCELLED`, decisão `409`, chamada `CANCELLED`, 0 restarts; (b) aprovação primeiro: `APPROVED`, restart, e o cancelamento recebe `409` | no máximo 1 restart, só com `APPROVED` e chamada `SUCCEEDED`; nenhum restart com chamada `CANCELLED`; a varredura seguinte não muda nada | `ApprovalIT.approvingAndCancellingAtTheSameTime_…` (6 rodadas) |
+| decisão × expiração | *lock* da aprovação | (a) `APPROVED` + restart; (b) `EXPIRED` + decisão `409` | exatamente 1 evento de auditoria entre `APPROVAL_GRANTED` e `APPROVAL_EXPIRED`; restart **se e somente se** `APPROVED` | `ApprovalIT.approvingAtTheMomentItExpires_…` (6 rodadas) |
+| retomada × queda do backend | recuperação na subida | chamada ainda não tomada → `CANCELLED`; chamada tomada → `OUTCOME_UNKNOWN` | nada roda depois; 0 ou 1 restart, nunca 2 | `RestartContainerIT.anApprovedCallNotYetTakenWhenTheBackendDies_…`, `aCrashDuringTheVerification_…` |
+
+Numa execução medida das duas corridas de 6 rodadas, os dois desfechos apareceram em cada uma
+(cancelamento: cancelada 1×, aprovada 5×; expiração: aprovada 2×, expirada 4×). Isso mostra que os testes
+exercitam os dois lados, mas a distribuição depende do agendamento das threads e não é uma garantia.
 
 ## 2. Matriz de ameaças: mitigação → código → teste → evidência
 
@@ -165,6 +213,10 @@ que passa de novo pela aprovação. O sistema também não impede restarts feito
 
 ## 6. Injeção de prompt
 
+**O que o CI prova:** dados não confiáveis não alteram as decisões de segurança do backend. **O que a H2
+mede (fatia 9c):** como o modelo real se comporta diante desses dados. São afirmações diferentes, e este
+documento só faz a primeira.
+
 **Princípio:** texto do LLM não é autorização, não é aprovação e não é decisão de política. A autorização vem
 só de estruturas do backend: o catálogo, a allowlist, as permissões atuais, a aprovação gravada.
 
@@ -199,9 +251,9 @@ prova o lado do backend: nenhum texto autoriza nada. Se um modelo real resiste �
 
 ## 8. Testes
 
-`./mvnw verify`: **400 testes** (239 unitários e 159 de integração no backend, e 2 no `demo-api`), 0 falhas,
+`./mvnw verify`: **401 testes** (240 unitários e 159 de integração no backend, e 2 no `demo-api`), 0 falhas,
 SpotBugs sem achados. Os 159 de integração também passaram em ordem alfabética reversa. Na fatia 8 eram 329;
-os 71 novos são quase todos casos das duas tabelas de transição.
+os 72 novos são quase todos casos das duas tabelas de transição.
 
 | Teste novo | O que prova |
 |---|---|
@@ -211,6 +263,7 @@ os 71 novos são quase todos casos das duas tabelas de transição.
 | `ApprovalIT.approvingAndCancellingAtTheSameTime_…`, `approvingAtTheMomentItExpires_…` | As duas corridas que faltavam (TM-B7-03) |
 | `RestartContainerIT` (+6): `aReasonThatLooksLikeASecret_…`, `anUnknownOutcome_survivesRecoveryAndTheSweep_…`, `aCrashDuringTheVerification_…`, `anApprovedCallNotYetTakenWhenTheBackendDies_…`, `anInjectionInTheLogs_…`, `anApprovalClaimedInsideTheArguments_…` | Achado 9a-01, idempotência, casos F e de recuperação, injeção nos logs e nos argumentos |
 | `SecretCanaryIT` | Nenhum segredo sai pelo log, HTTP, banco ou LLM |
+| `ToolExecutorCapacityTest` | A única transição de `ToolExecution` que nenhum teste alcançava: `PROPOSED → FAILED (CAPACITY_EXCEEDED)`, sem chamar a ferramenta |
 | `DockerEngineContainerRuntimeTest.anUnparsableInspect_…` | O `Env` não aparece nem num `inspect` quebrado (achado 9a-02) |
 | Asserção nova em `ApprovalIT.theDecisionAndItsAuditEvent_areAtomic` | O `500` não vaza detalhes (TM-B1-06) |
 
