@@ -3,6 +3,7 @@
 # several reproducible ways, asks the agent why the API is down, and writes one markdown row per scenario
 # with the answer, the findings the backend computed and the cost. The "Causa correta?" column is for you to
 # fill in with Sim / Parcial / Não: there is no target yet (docs/07-plano-do-mvp.md, slice 6).
+# H2 measures diagnosis only: a restart the agent proposes is recorded and cancelled, never approved (slice 8).
 #
 # Requires: the stack running (docker compose up -d), .env in the repository root, curl, jq and docker.
 # With LLM_PROVIDER=openai this spends money: every scenario is one agent execution.
@@ -99,6 +100,12 @@ ask() { # prints one markdown row
     view=$(api GET "/executions/$execution")
     case $(jq -r .status <<<"$view") in QUEUED|RUNNING) sleep 1 ;; *) break ;; esac
   done
+  # Slice 8: the evaluation never approves anything. A proposed restart is recorded as proposed (the row keeps
+  # restartContainer→WAITING_APPROVAL) and the execution is cancelled, so it does not wait for a human.
+  if [ "$(jq -r .status <<<"$view")" = WAITING_APPROVAL ]; then
+    api POST "/executions/$execution/cancel" >/dev/null
+    view=$(jq '.statusReason = "proposta registrada e cancelada pela avaliação"' <<<"$view")
+  fi
   findings=$(docker compose exec -T postgres psql -U devops_agent -d devops_agent -At -c \
     "SELECT string_agg(f->>'code', ', ') FROM tool_execution t, jsonb_array_elements(t.output->'findings') f
      WHERE t.agent_execution_id = '$execution'" | tr -d '\r')

@@ -59,6 +59,12 @@ public class ApprovalQueries {
                 .toList();
     }
 
+    /** The approval of one tool call, if it needed one. */
+    @Transactional(readOnly = true)
+    public Optional<ApprovalView> forToolExecution(UUID organizationId, UUID toolExecutionId) {
+        return approvals.findByToolExecutionIdAndOrganizationId(toolExecutionId, organizationId).map(this::view);
+    }
+
     @Transactional(readOnly = true)
     public ApprovalView get(CurrentUser user, UUID approvalId) {
         return approvals.findByIdAndOrganizationId(approvalId, user.organizationId())

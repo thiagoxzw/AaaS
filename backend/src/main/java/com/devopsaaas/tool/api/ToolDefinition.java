@@ -10,6 +10,8 @@ import java.util.Objects;
  *
  * @param targetParameter name of the input component that references an allowlisted service, or null
  * @param impactDescription trusted, deterministic text shown on approvals; required unless READ_ONLY
+ * @param justificationParameter name of the input component that carries the model's justification, shown
+ *        on approvals as untrusted; being an argument, it is bound by the arguments hash (slice 8), or null
  */
 public record ToolDefinition(
         String name,
@@ -23,7 +25,8 @@ public record ToolDefinition(
         Duration timeout,
         boolean retryable,
         String impactDescription,
-        int maxOutputBytes) {
+        int maxOutputBytes,
+        String justificationParameter) {
 
     public static Builder builder(String name) {
         return new Builder(name);
@@ -47,6 +50,7 @@ public record ToolDefinition(
         private boolean retryable;
         private String impactDescription;
         private int maxOutputBytes = 16 * 1024;
+        private String justificationParameter;
 
         private Builder(String name) {
             this.name = name;
@@ -107,10 +111,15 @@ public record ToolDefinition(
             return this;
         }
 
+        public Builder justificationParameter(String value) {
+            this.justificationParameter = value;
+            return this;
+        }
+
         public ToolDefinition build() {
             return new ToolDefinition(Objects.requireNonNull(name), version, description, category, riskLevel,
                     requiredPermission, approvalRequirement, targetParameter, timeout, retryable,
-                    impactDescription, maxOutputBytes);
+                    impactDescription, maxOutputBytes, justificationParameter);
         }
     }
 }

@@ -1,0 +1,25 @@
+{
+  "name": "demo-fix",
+  "when": "(?i)(reinici|restart|consert|\\bfix\\b)",
+  "priority": 30,
+  "turns": [
+    {
+      "text": "I will check the state of demo-api first.",
+      "toolCalls": [{"name": "getContainerStatus", "arguments": {"service": "demo-api"}}]
+    },
+    {
+      "text": "Now the latest log lines.",
+      "toolCalls": [{"name": "getContainerLogs", "arguments": {"service": "demo-api", "tail": 20}}]
+    },
+    {
+      "text": "I propose restarting demo-api. It needs a human approval before it runs.",
+      "toolCalls": [{"name": "restartContainer", "arguments": {
+        "service": "demo-api",
+        "reason": "The user asked to fix demo-api; the status and logs were checked first (scripted demo)."
+      }}]
+    },
+    {
+      "text": "Restart result (scripted answer, no model involved): {{lastToolResult}}"
+    }
+  ]
+}

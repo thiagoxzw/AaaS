@@ -75,6 +75,11 @@ final class ToolDefinitionValidator {
             problems.add(name + ": targetParameter '" + definition.targetParameter()
                     + "' must be a String component of " + tool.inputType().getSimpleName());
         }
+        if (definition.justificationParameter() != null
+                && !hasStringComponent(tool.inputType(), definition.justificationParameter())) {
+            problems.add(name + ": justificationParameter '" + definition.justificationParameter()
+                    + "' must be a String component of the input");
+        }
         try {
             schemas.schemaFor(tool.inputType());
         } catch (JsonSchemaGenerator.UnsupportedInputException exception) {

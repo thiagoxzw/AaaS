@@ -58,15 +58,16 @@ services:
     # docker-proxy: the only way to the Docker Engine, through the proxy (ADR-011).
     networks: [backend, docker-proxy]
 
-  # The backend's only path to Docker. It allows reading containers and their logs; creating, starting,
-  # executing into, deleting containers, images, volumes, networks and events are refused with 403.
-  # Restart stays off until slice 8, which brings the tool that needs it (least privilege per slice).
+  # The backend's only path to Docker. It allows reading containers and their logs, and restarting them
+  # (slice 8, restartContainer); creating, starting, executing into, deleting containers, images, volumes,
+  # networks and events are refused with 403. ALLOW_RESTARTS also lets stop and kill through: a residual risk
+  # the backend never uses (ADR-011).
   docker-socket-proxy:
     image: linuxserver/socket-proxy:3.4.5@sha256:ca6c0301a652232d02cb0ff9f1c5d20d9b339f391e1c1dffaae6ef3bfc59d009
     environment:
       CONTAINERS: "1"
       ALLOW_LOGS: "1"
-      ALLOW_RESTARTS: "0"
+      ALLOW_RESTARTS: "1"
       POST: "0"
       EVENTS: "0"
       PING: "1"

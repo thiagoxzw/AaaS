@@ -40,6 +40,12 @@ public record PolicyDecision(
         return Optional.ofNullable(tool);
     }
 
+    /** A String argument of the validated input by name (slice 8: the declared justification), if any. */
+    public Optional<String> argument(String name) {
+        return input == null || name == null ? Optional.empty()
+                : Optional.ofNullable(ArgumentBinder.componentValue(input, name));
+    }
+
     public Optional<ContainerRef> resolvedTarget() {
         return Optional.ofNullable(target);
     }

@@ -9,9 +9,12 @@ import com.devopsaaas.llm.InterceptingLlmGateway;
 import com.devopsaaas.llm.LlmMessage;
 import com.devopsaaas.llm.LlmRequest;
 import com.devopsaaas.support.AgentTestSupport;
+import com.devopsaaas.tool.api.ToolExecutionContext;
+import com.devopsaaas.tool.api.ToolResult;
+import com.devopsaaas.tool.builtin.RestartContainerTool;
 import com.devopsaaas.tool.container.ContainerRef;
 import com.devopsaaas.tool.container.ContainerRuntime;
-import com.devopsaaas.tool.container.ContainerRuntimeException;
+import com.devopsaaas.tool.container.ContainerState;
 import com.devopsaaas.tool.container.FakeContainerRuntime;
 import com.devopsaaas.tool.execution.ToolExecutionOutcome;
 import com.devopsaaas.tool.execution.ToolExecutionRequest;
@@ -38,10 +41,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,7 +70,10 @@ import tools.jackson.databind.JsonNode;
  * proxy. It shows the two layers apart: the proxy limits what the API may do (it would happily serve the
  * intruder's inspect), and the allowlist, enforced by the backend, limits which containers the agent may use.
  */
-@TestPropertySource(properties = TestToolsConfiguration.REAL_RUNTIME_PROPERTY + "=true")
+@TestPropertySource(properties = {TestToolsConfiguration.REAL_RUNTIME_PROPERTY + "=true",
+        // Real containers take real seconds to start and pass their healthcheck (slice 8).
+        "devops.tools.restart.graceful-stop=2s", "devops.tools.restart.verification-window=40s",
+        "devops.tools.restart.poll-interval=500ms", "devops.tools.restart.stable-running=2s"})
 class RealDockerIT extends AgentTestSupport {
 
     /** Same image and digest as docker-compose.yml; {@link #theProxyHereIsTheOneFromCompose()} keeps them equal. */
@@ -88,7 +96,7 @@ class RealDockerIT extends AgentTestSupport {
             .withEnv(Map.of(
                     "CONTAINERS", "1",
                     "ALLOW_LOGS", "1",
-                    "ALLOW_RESTARTS", "0",
+                    "ALLOW_RESTARTS", "1",
                     "POST", "0",
                     "EVENTS", "0",
                     "PING", "1",
@@ -148,6 +156,9 @@ class RealDockerIT extends AgentTestSupport {
 
     @Autowired
     InterceptingLlmGateway llm;
+
+    @Autowired
+    RestartContainerTool restartTool;
 
     private TestUser admin;
     private TestUser operator;
@@ -276,14 +287,14 @@ class RealDockerIT extends AgentTestSupport {
     // ---- the proxy's policy ------------------------------------------------------------------------------
 
     @Test
-    void theProxyRefusesEverythingBeyondReadingContainersAndLogs() throws Exception {
+    void theProxyRefusesEverythingBeyondReadingContainersAndLogsAndRestarting() throws Exception {
         String target = "/v1.44/containers/" + TARGET_NAME;
         Map<String, String> refused = Map.ofEntries(
                 Map.entry("POST /v1.44/containers/create", "{\"Image\":\"alpine:3.22\",\"HostConfig\":{\"Privileged\":true}}"),
                 Map.entry("POST " + target + "/exec", "{\"Cmd\":[\"id\"]}"),
                 Map.entry("POST " + target + "/start", ""),
-                Map.entry("POST " + target + "/restart", ""),
-                Map.entry("POST " + target + "/kill", ""),
+                Map.entry("POST " + target + "/pause", ""),
+                Map.entry("POST " + target + "/update", "{}"),
                 Map.entry("DELETE " + target, ""),
                 Map.entry("GET " + target + "/archive?path=/etc/passwd", ""),
                 Map.entry("GET " + target + "/export", ""),
@@ -300,13 +311,82 @@ class RealDockerIT extends AgentTestSupport {
         assertThat(TARGET.isRunning()).isTrue();
     }
 
+    /**
+     * Slice 8, the tool against the real engine through the proxy: a running container with a healthcheck and
+     * a stopped one both come back, and the verification tells them apart. The restart is only counted once
+     * the container's StartedAt moved.
+     */
     @Test
-    void restartIsRefusedByTheProxyInThisSlice_andTheAdapterReportsItAsForbidden() {
-        ContainerRef ref = FakeContainerRuntime.ref(UUID.randomUUID(), "demo-api", TARGET_NAME);
+    void restartContainer_restartsARunningAndAStoppedContainer_andVerifiesWhatCameBack() {
+        DockerClient docker = DockerClientFactory.instance().client();
+        List<String> created = new ArrayList<>();
+        try {
+            String healthy = docker.createContainerCmd(TARGET_IMAGE)
+                    .withName("devops-it-restart-healthy-" + SUFFIX)
+                    .withHealthcheck(new HealthCheck().withTest(List.of("CMD", "true"))
+                            .withInterval(Duration.ofSeconds(1).toNanos()).withRetries(1))
+                    .withCmd("sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait")
+                    .exec().getId();
+            created.add(healthy);
+            docker.startContainerCmd(healthy).exec();
+            String stopped = start(docker, "restart-stopped", HostConfig.newHostConfig(),
+                    "sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait");
+            created.add(stopped);
+            docker.stopContainerCmd(stopped).withTimeout(5).exec();
+            await().atMost(Duration.ofSeconds(20)).until(() -> "healthy".equals(
+                    docker.inspectContainerCmd(healthy).exec().getState().getHealth().getStatus()));
+            String healthyStart = docker.inspectContainerCmd(healthy).exec().getState().getStartedAt();
 
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> runtime.restart(ref, Duration.ofSeconds(1)))
-                .isInstanceOfSatisfying(ContainerRuntimeException.class, exception -> assertThat(exception.category())
-                        .isEqualTo(ContainerRuntimeException.Category.FORBIDDEN));
+            RestartContainerTool.Output first = restartWithTheTool("healthy-case", healthy);
+            RestartContainerTool.Output second = restartWithTheTool("stopped-case", stopped);
+
+            assertThat(first.restartObserved()).isTrue();
+            assertThat(first.verification()).isEqualTo(RestartContainerTool.Verification.HEALTHY);
+            assertThat(first.stateBefore()).isEqualTo(ContainerState.RUNNING);
+            assertThat(docker.inspectContainerCmd(healthy).exec().getState().getStartedAt()).isNotEqualTo(healthyStart);
+            assertThat(second.stateBefore()).isEqualTo(ContainerState.EXITED);
+            assertThat(second.restartObserved()).isTrue();
+            assertThat(second.verification()).isEqualTo(RestartContainerTool.Verification.RUNNING_NO_HEALTHCHECK);
+            assertThat(running(docker, stopped)).isTrue();
+            assertThat(proxyRequestLog()).contains("/restart");
+        } finally {
+            created.forEach(container -> docker.removeContainerCmd(container).withForce(true).exec());
+        }
+    }
+
+    /**
+     * ADR-011, residual risk: ALLOW_RESTARTS also lets stop and kill through the proxy. The backend never calls
+     * them; this test documents what the proxy alone does not prevent, on a container of its own.
+     */
+    @Test
+    void stopAndKill_alsoPassTheProxy_residualRiskOfAllowRestarts() throws Exception {
+        DockerClient docker = DockerClientFactory.instance().client();
+        String victim = start(docker, "residual", HostConfig.newHostConfig(), "sh", "-c",
+                "trap 'exit 0' TERM; sleep 300 & wait");
+        try {
+            String path = "/v1.44/containers/" + victim;
+            assertThat(rawProxy("POST", path + "/stop?t=1").statusCode()).isEqualTo(204);
+            assertThat(rawProxy("POST", path + "/start").statusCode()).as("start stays refused").isEqualTo(403);
+            docker.startContainerCmd(victim).exec();
+            assertThat(rawProxy("POST", path + "/kill").statusCode()).isEqualTo(204);
+        } finally {
+            docker.removeContainerCmd(victim).withForce(true).exec();
+        }
+    }
+
+    private RestartContainerTool.Output restartWithTheTool(String service, String containerId) {
+        String name = docker().inspectContainerCmd(containerId).exec().getName().replaceFirst("^/", "");
+        ContainerRef ref = FakeContainerRuntime.ref(UUID.randomUUID(), service, name);
+        ToolResult result = restartTool.execute(new ToolExecutionContext(DEFAULT_ORGANIZATION, environment,
+                UUID.randomUUID(), UUID.randomUUID(), operator.id(), Optional.of(ref),
+                Instant.now().plus(Duration.ofSeconds(90)), null), new RestartContainerTool.Input(service,
+                "Real Docker test of the restart through the proxy."));
+        assertThat(result).isInstanceOf(ToolResult.Success.class);
+        return (RestartContainerTool.Output) ((ToolResult.Success) result).data();
+    }
+
+    private static DockerClient docker() {
+        return DockerClientFactory.instance().client();
     }
 
     /**
@@ -348,7 +428,7 @@ class RealDockerIT extends AgentTestSupport {
         String compose = Files.readString(Path.of("..", "docker-compose.yml"));
 
         assertThat(compose).contains("image: " + PROXY_IMAGE)
-                .contains("ALLOW_RESTARTS: \"0\"", "POST: \"0\"", "EVENTS: \"0\"", "CONTAINERS: \"1\"",
+                .contains("ALLOW_RESTARTS: \"1\"", "POST: \"0\"", "EVENTS: \"0\"", "CONTAINERS: \"1\"",
                         "ALLOW_LOGS: \"1\"");
     }
 

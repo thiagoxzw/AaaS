@@ -52,7 +52,10 @@ import tools.jackson.databind.json.JsonMapper;
                 // Tests share one database; the recovery is exercised explicitly (AgentRecoveryIT).
                 "devops.agent.recover-on-startup=false",
                 // The approval sweep is exercised explicitly too (ApprovalIT calls it directly).
-                "devops.approval.sweep-enabled=false"
+                "devops.approval.sweep-enabled=false",
+                // The fake runtime restarts instantly: verify quickly (slice 8).
+                "devops.tools.restart.poll-interval=20ms", "devops.tools.restart.stable-running=100ms",
+                "devops.tools.restart.verification-window=2s"
         })
 @Import({TestToolsConfiguration.class, TestLlmConfiguration.class})
 public abstract class IntegrationTest {
