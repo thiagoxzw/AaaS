@@ -1,7 +1,7 @@
 # Fatia 6.1 — Dados atuais para o diagnóstico
 
-> Status: **implementada** (2026-09-28). Origem: a primeira medição de H2
-> ([fatia 6](06-llm-real.md#primeira-medição-de-h2)). A nova medição fica com o autor.
+> Status: **implementada e medida** (2026-09-28). Origem: a primeira medição de H2
+> ([fatia 6](06-llm-real.md#primeira-medição-de-h2)). Resultado: [segunda medição de H2](#segunda-medição-de-h2).
 
 ## Objetivo
 
@@ -87,6 +87,79 @@ QUESTION="Por que minha API esta fora do ar?" ./scripts/evaluate-agent.sh   # ro
 A pergunta continua **sem acento**, igual à primeira medição, para a comparação valer (o script já aceita
 acentos). O custo esperado é de cerca de 1,5 centavo de dólar nas duas rodadas.
 
+## Segunda medição de H2
+
+Feita pelo autor em 2026-09-28, em duas rodadas seguidas (03:16 e 03:17 UTC), com o mesmo modelo
+(`gpt-5.6-luna`), a mesma pergunta sem acento e os mesmos 5 cenários da primeira.
+
+### Critério de avaliação
+
+A coluna "Causa correta?" é do autor, em três estados, **sem transformar os casos numa taxa de acerto**:
+
+- **Sim:** a causa principal está certa. Um deslize periférico fica anotado, mas não rebaixa a nota. Foi o
+  critério usado na primeira medição (o `oom`, com o "reiniciou uma vez" inventado, ficou Sim), e ele não mudou.
+- **Parcial:** fatos corretos, mas a causa operacional real não foi alcançada, ou uma causa errada aparece como
+  principal.
+- **Não:** a causa apontada está errada.
+
+### Resultado
+
+| Cenário | 1ª medição | 2ª, rodada 1 | 2ª, rodada 2 |
+|---|---|---|---|
+| unhealthy | ✅ Sim | ✅ Sim | ✅ Sim |
+| crash | ✅ Sim | ✅ Sim | ✅ Sim |
+| oom | ✅ Sim (deslize: "reiniciou uma vez") | ✅ Sim | ✅ Sim |
+| kill | ❌ Não | 🟡 Parcial | 🟡 Parcial |
+| stop | 🟡 Parcial | ✅ Sim | ✅ Sim |
+
+**`kill`, Parcial nas duas rodadas:** o agente identificou SIGKILL (137, sem OOM) e não inventou uma causa. Ele
+repetiu que o achado não é conclusivo, mas não chegou à causa operacional real, o `docker kill`. É melhor que a
+primeira medição, que concluiu "esgotamento do heap" a partir de logs antigos, mas ainda não é uma identificação
+completa. Os dados que o backend entrega hoje não distinguem um `docker kill` de um `docker stop` que estourou
+o prazo, e essa limitação é do diagnóstico, não do modelo.
+
+**Custo:** cerca de US$ 0,0058 na rodada 1 e US$ 0,0047 na rodada 2, contra US$ 0,0072 na primeira medição. Ele
+ficou estável entre os cenários (cerca de 0,0009 a 0,0010), em vez de crescer a cada cenário (0,0010 a 0,0020). A
+exceção é o `unhealthy` da rodada 1 (0,0019), que pediu histórico (abaixo).
+
+### Quando o modelo pediu `since`
+
+Os argumentos de cada `getContainerLogs`, lidos em `tool_execution` depois das rodadas:
+
+| Medição | Chamadas | Com `since` explícito | `scope` |
+|---|---|---|---|
+| 1ª (fatia 6, sem filtro padrão) | 5 | **4** (`"2h"`: unhealthy, crash, oom, kill) | Não existia |
+| 2ª, rodada 1 | 5 | **1** (`"2h"`: unhealthy) | 1 `SINCE`, 4 `CURRENT_RUN` |
+| 2ª, rodada 2 | 5 | **0** | 5 `CURRENT_RUN` |
+
+Três coisas aparecem aqui:
+
+1. **Toda chamada sem `since` recebeu só a execução atual** (9 de 9). É o critério de sucesso da fatia.
+2. **O modelo passou a pedir histórico muito menos:** 4 de 5 chamadas na primeira medição, 1 de 10 na segunda.
+   O `kill` da primeira medição, o erro principal, **tinha pedido `since: "2h"`**. Portanto, o filtro padrão
+   sozinho não teria mudado aquela chamada.
+3. **Quando pediu histórico, o modelo o separou do presente:** no `unhealthy` da rodada 1, ele citou o OOM como
+   "de uma execução anterior" e manteve a causa atual certa. A saída tinha `scope: SINCE` e `runStartedAt`.
+
+O `stop` é o único caso que mostra o efeito **isolado** do novo padrão. Na primeira medição, ele não pediu
+`since` e recebeu o histórico, porque ainda não havia filtro. Na segunda, também sem `since`, recebeu
+`CURRENT_RUN`.
+
+### O que se pode concluir, e o que não
+
+A fatia 6.1 reduziu a exposição inadvertida a histórico e também mudou a forma como o modelo escolhe consultar
+`getContainerLogs`. A melhora vem da **combinação** de três coisas:
+
+- o padrão `CURRENT_RUN`, que garante o critério quando o modelo não pede histórico;
+- a **nova descrição da ferramenta** ("By default only the current run…; pass since to include earlier runs"),
+  que muito provavelmente fez o modelo pedir `since` com muito menos frequência;
+- o `scope` e o `runStartedAt`, que deixaram o histórico identificável quando ele foi pedido.
+
+**Não dá para atribuir a melhora só ao filtro padrão.** A decisão 6 manteve o prompt, mas as descrições das
+ferramentas mudaram, e elas tiveram um peso que eu não previ no desenho. Separar os dois efeitos exigiria uma
+medição com o filtro e a descrição antiga, e ela não foi feita. Também são 15 casos no total, com um modelo que
+não é determinístico: o resultado mostra uma direção, não uma taxa.
+
 ## Divergências e achados
 
 1. **Nenhuma divergência do desenho aprovado.**
@@ -102,3 +175,9 @@ acentos). O custo esperado é de cerca de 1,5 centavo de dólar nas duas rodadas
    porque é a mesma saída da ferramenta.
 5. **O `date` do busybox não tem `%N`:** o primeiro teste real imprimia o mesmo texto nas duas execuções. Ele
    passou a usar um UUID por execução, o que também deixou a prova mais forte.
+6. **A descrição da ferramenta mudou o comportamento do modelo mais do que o previsto.** Na primeira medição, o
+   modelo pediu `since: "2h"` em 4 de 5 chamadas. Na segunda, pediu em 1 de 10. O desenho isolou o prompt
+   (decisão 6), mas não as descrições, e por isso a comparação não separa o efeito do filtro do efeito do texto
+   da ferramenta (acima).
+7. **`kill` continua Parcial:** o backend não tem dado para distinguir um `docker kill` de um `docker stop` que
+   estourou o prazo. Fica registrado como limitação do diagnóstico, sem proposta nesta fatia.

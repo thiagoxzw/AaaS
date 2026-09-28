@@ -187,6 +187,10 @@ A correção é no backend, não no prompt. Ela muda o contrato das ferramentas 
 `health` só com o container rodando), então vai ter desenho próprio antes da fatia 7. Depois dela, os **mesmos
 5 cenários** serão medidos de novo, para a comparação valer.
 
+*Feito na [fatia 6.1](06-1-dados-atuais.md#segunda-medição-de-h2).* A consulta dos argumentos depois mostrou
+que, nesta medição, o modelo pediu `since: "2h"` em 4 das 5 leituras de logs, inclusive no `kill`. Parte do
+histórico chegou porque foi pedido, e não só porque o Docker o devolve por padrão.
+
 ## Divergências e achados
 
 1. **A documentação oficial e a API não eram alcançáveis daqui** (acima). É a principal limitação da fatia.
