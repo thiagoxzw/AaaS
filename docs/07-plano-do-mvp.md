@@ -265,6 +265,15 @@ alteraria são recusados antes da aprovação (9a-01), o adapter do Docker não 
 e `ToolExecution` guarda as suas próprias transições (9a-03). 9b (observabilidade e caos) e 9c (release) vêm
 depois, em PRs separados.
 
+**Resultado da fatia 9b — observabilidade e caos** ([detalhes](fatias/09b-observabilidade-caos.md)): quatro
+métricas (`devops.approvals`, `devops.approval.wait`, `devops.tool.restart.verification` e a sua duração),
+contadas depois do commit, e o dashboard *Agente*, ligado ao código por um teste que exige cada série que ele
+consulta. Cinco cenários de caos observados no compose, com o `docker events` como evidência independente. Nos
+três em que a conexão caiu com um restart em andamento (`kill -9`, restart gracioso e proxy caindo), o Docker
+concluiu o restart, o sistema registrou `OUTCOME_UNKNOWN` e não houve segundo pedido. Duas observações ficaram
+para decisão: o `OUTCOME_UNKNOWN` da recuperação fora da métrica, e o desligamento gracioso que não espera as
+chamadas em andamento.
+
 ## 4. Definição de pronto (vale para toda fatia)
 
 - [ ] Desenho explicado e validado **antes** do código.

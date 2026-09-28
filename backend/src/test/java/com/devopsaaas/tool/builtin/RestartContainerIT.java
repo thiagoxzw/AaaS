@@ -15,17 +15,24 @@ import com.devopsaaas.tool.container.ContainerState;
 import com.devopsaaas.tool.container.FakeContainerRuntime;
 import com.devopsaaas.tool.container.HealthStatus;
 import com.devopsaaas.tool.container.LogLine;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -36,6 +43,7 @@ import tools.jackson.databind.JsonNode;
 class RestartContainerIT extends AgentTestSupport {
 
     private static final List<String> NOT_FINISHED = List.of("QUEUED", "RUNNING", "WAITING_APPROVAL");
+    private static final java.util.regex.Pattern SERIES = java.util.regex.Pattern.compile("devops_[a-z_]+");
     private static final String REASON =
             "The user asked to fix demo-api; the status and logs were checked first (scripted demo).";
 
@@ -50,6 +58,9 @@ class RestartContainerIT extends AgentTestSupport {
 
     @Autowired
     ApprovalResumption resumption;
+
+    @Value("${local.management.port}")
+    int managementPort;
 
     private TestUser admin;
     private TestUser operator;
@@ -407,6 +418,42 @@ class RestartContainerIT extends AgentTestSupport {
         JsonNode pending = explain(approver, toolExecution);
         assertThat(pending.get("result").get("status").asString()).isEqualTo("WAITING_APPROVAL");
         assertThat(pending.get("approval").get("status").asString()).isEqualTo("PENDING");
+    }
+
+    /**
+     * Slice 9b: every series the Agente dashboard queries exists in the real scrape once an approved restart and a
+     * denial have happened, and the new ones carry the labels the panels group by. A renamed metric or a typo in
+     * the dashboard fails here instead of showing an empty panel.
+     */
+    @Test
+    void everySeriesOfTheAgentDashboard_isExposed_withTheLabelsItGroupsBy() throws Exception {
+        JsonNode waiting = ask(operator, conversation(operator, environment), question());
+        decide(approver, approvalOf(waiting).get("approvalId").asString(), "APPROVE", null);
+        finished(operator, waiting.get("executionId").asString());
+        finished(operator, ask(operator, conversation(operator, environment),
+                "[RESTART-EXTRA-ARGUMENT] " + uniqueName("q")).get("executionId").asString());
+
+        String dashboard = Files.readString(Path.of("..", "observability", "grafana", "dashboards",
+                "devops-agent-agent.json"));
+        Set<String> series = new TreeSet<>();
+        Matcher names = SERIES.matcher(dashboard);
+        while (names.find()) {
+            series.add(names.group());
+        }
+        String scrape = RestClient.create().get().uri("http://localhost:" + managementPort + "/actuator/prometheus")
+                .retrieve().body(String.class);
+
+        assertThat(series).hasSizeGreaterThanOrEqualTo(10);
+        for (String name : series) {
+            assertThat(scrape).as("series %s of the dashboard", name).containsPattern("(?m)^" + name + "\\{");
+        }
+        assertThat(scrape)
+                .containsPattern("(?m)^devops_approvals_total\\{[^}]*status=\"PENDING\"[^}]*tool=\"restartContainer\"")
+                .containsPattern("(?m)^devops_approvals_total\\{[^}]*status=\"APPROVED\"[^}]*tool=\"restartContainer\"")
+                .containsPattern("(?m)^devops_approval_wait_seconds_bucket\\{[^}]*status=\"APPROVED\"")
+                .containsPattern("(?m)^devops_tool_restart_verification_total\\{[^}]*verification=\"HEALTHY\"")
+                .containsPattern("(?m)^devops_tool_restart_verification_duration_seconds_bucket\\{[^}]*"
+                        + "verification=\"HEALTHY\"");
     }
 
     // ---- helpers -----------------------------------------------------------------------------------------

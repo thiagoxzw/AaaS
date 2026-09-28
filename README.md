@@ -18,6 +18,7 @@
 | [7](docs/fatias/07-aprovacao.md) | Aprovação humana: ações de risco param em `WAITING_APPROVAL`, uma pessoa com `APPROVAL_DECIDE` aprova ou rejeita pela API, e a execução retoma com a chamada **exata** que foi aprovada, depois de reavaliar a política |
 | [8](docs/fatias/08-restart.md) | `restartContainer` de ponta a ponta: diagnóstico → proposta → aprovação → restart → verificação determinística → auditoria, e `GET /tool-executions/{id}` para responder quem pediu, quem aprovou, quando, por quê e com que resultado |
 | [9a](docs/fatias/09a-evidencias.md) | Fechamento, parte 1: as máquinas de estado e as ameaças ligadas a testes que existem, com as evidências observáveis; três achados de segurança corrigidos |
+| [9b](docs/fatias/09b-observabilidade-caos.md) | Fechamento, parte 2: métricas de aprovação e de verificação do restart, o dashboard *Agente* no Grafana e cinco cenários de caos observados (backend morto ou reiniciado, proxy e LLM fora, proxy caindo no meio de um restart) |
 
 A fatia 9 fecha o MVP. O README completo (exemplos, screenshots, API) será escrito nela.
 

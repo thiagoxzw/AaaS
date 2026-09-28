@@ -10,6 +10,7 @@ import com.devopsaaas.llm.InterceptingLlmGateway;
 import com.devopsaaas.llm.LlmMessage;
 import com.devopsaaas.support.AgentTestSupport;
 import com.devopsaaas.tool.container.FakeContainerRuntime;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -48,6 +49,9 @@ class ApprovalIT extends AgentTestSupport {
 
     @Autowired
     AgentStartupRecovery recovery;
+
+    @Autowired
+    MeterRegistry meters;
 
     private TestUser admin;
     private TestUser operator;
@@ -445,11 +449,41 @@ class ApprovalIT extends AgentTestSupport {
         }
     }
 
+    /**
+     * Slice 9b: devops.approvals counts each committed transition once, by status and tool, and
+     * devops.approval.wait times the ones that ended the wait. Cumulative counters, so the test reads deltas.
+     */
+    @Test
+    void approvalMetrics_countEachCommittedTransitionOnce() {
+        double requested = approvals("PENDING");
+        double granted = approvals("APPROVED");
+        double rejected = approvals("REJECTED");
+        long grantedWaits = meters.timer("devops.approval.wait", "status", "APPROVED").count();
+
+        JsonNode first = ask(operator, conversation(operator, environment), echo());
+        JsonNode second = ask(operator, conversation(operator, environment), echo());
+        decide(approver, approvalOf(first).get("approvalId").asString(), "APPROVE", null);
+        decide(approver, approvalOf(second).get("approvalId").asString(), "REJECT", null);
+        decide(approver, approvalOf(second).get("approvalId").asString(), "APPROVE", null);
+        finished(operator, first.get("executionId").asString());
+        finished(operator, second.get("executionId").asString());
+
+        assertThat(approvals("PENDING") - requested).isEqualTo(2);
+        assertThat(approvals("APPROVED") - granted).as("the late second decision is a 409, not a count").isOne();
+        assertThat(approvals("REJECTED") - rejected).isOne();
+        assertThat(meters.timer("devops.approval.wait", "status", "APPROVED").count() - grantedWaits).isOne();
+    }
+
+    private double approvals(String status) {
+        return meters.counter("devops.approvals", "status", status, "tool", "testRestart").count();
+    }
+
     /** TM-B7-07: if the audit event cannot be written, the decision is not written either. */
     @Test
     void theDecisionAndItsAuditEvent_areAtomic() {
         JsonNode waiting = ask(operator, conversation(operator, environment), "[APPROVAL-ECHO] restart demo-api");
         String approvalId = approvalOf(waiting).get("approvalId").asString();
+        double grantedBefore = approvals("APPROVED");
         String trigger = "fail_audit_" + approvalId.replace("-", "");
         jdbc.execute("CREATE FUNCTION " + trigger + "() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN "
                 + "IF NEW.resource_id = '" + approvalId + "' AND NEW.action = 'APPROVAL_GRANTED' THEN "
@@ -469,6 +503,8 @@ class ApprovalIT extends AgentTestSupport {
 
         assertThat(jdbc.queryForObject("SELECT status FROM approval WHERE id = ?::uuid", String.class, approvalId))
                 .isEqualTo("PENDING");
+        // Slice 9b: the rolled-back decision is not in the metrics either (counted after the commit only).
+        assertThat(approvals("APPROVED")).isEqualTo(grantedBefore);
         resumption.sweep();
         assertThat(restarts()).isZero();
     }

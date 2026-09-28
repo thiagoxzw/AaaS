@@ -18,6 +18,7 @@ import com.devopsaaas.tool.container.ContainerRuntimeException;
 import com.devopsaaas.tool.container.ContainerSnapshot;
 import com.devopsaaas.tool.container.ContainerState;
 import com.devopsaaas.tool.container.HealthStatus;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -26,6 +27,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -84,10 +86,12 @@ public class RestartContainerTool implements Tool<RestartContainerTool.Input> {
 
     private final ContainerRuntime runtime;
     private final RestartProperties properties;
+    private final MeterRegistry meters;
 
-    RestartContainerTool(ContainerRuntime runtime, RestartProperties properties) {
+    RestartContainerTool(ContainerRuntime runtime, RestartProperties properties, MeterRegistry meters) {
         this.runtime = runtime;
         this.properties = properties;
+        this.meters = meters;
     }
 
     @Override
@@ -122,6 +126,7 @@ public class RestartContainerTool implements Tool<RestartContainerTool.Input> {
     }
 
     private ToolResult verify(ToolExecutionContext context, ContainerRef target, ContainerSnapshot before) {
+        long started = System.nanoTime();
         Instant windowEnd = earliest(Instant.now().plus(properties.verificationWindow()),
                 context.deadline().minus(DEADLINE_MARGIN));
         ContainerSnapshot last = null;
@@ -146,6 +151,10 @@ public class RestartContainerTool implements Tool<RestartContainerTool.Input> {
         Output output = new Output(target.serviceName(), before.state(), last == null ? null : last.state(),
                 last == null ? null : HealthStatus.reported(last.state(), last.health()),
                 observed ? last.startedAt() : null, observed, verification);
+        // Slice 9b: only restarts the runtime accepted get here; an unknown outcome never reaches this point.
+        meters.counter("devops.tool.restart.verification", "verification", verification.name()).increment();
+        meters.timer("devops.tool.restart.verification.duration", "verification", verification.name())
+                .record(System.nanoTime() - started, TimeUnit.NANOSECONDS);
         return ToolResult.success(output, findings(output));
     }
 
