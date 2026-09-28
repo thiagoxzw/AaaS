@@ -69,3 +69,21 @@ jobs:
       # Build only; publishing to a registry comes with the MVP closing slice (docs/07-plano-do-mvp.md).
       - run: docker build --file backend/Dockerfile --tag devops-agent:ci .
       - run: docker build --file demo-api/Dockerfile --tag devops-demo-api:ci .
+      # Slice 9c: image scan. What the images contain is recorded by severity (job summary and artifact), and
+      # only a CRITICAL vulnerability with a fix available fails the build (docs/fatias/09c-release.md).
+      - name: Scan images (Trivy)
+        run: |
+          mkdir -p trivy
+          for image in devops-agent:ci devops-demo-api:ci; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/trivy:/out" \
+              aquasec/trivy:0.74.0 image --quiet --exit-code 0 --format json --output "/out/${image%%:*}.json" "$image"
+          done
+          ./scripts/trivy-summary.sh trivy/devops-agent.json trivy/devops-demo-api.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the scan reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-scan
+          path: trivy/
+      - name: Fail on CRITICAL vulnerabilities with a fix available
+        run: ./scripts/trivy-gate.sh trivy/devops-agent.json trivy/devops-demo-api.json
