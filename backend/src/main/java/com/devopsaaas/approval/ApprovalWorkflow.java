@@ -9,7 +9,10 @@ import com.devopsaaas.shared.error.ApiException;
 import com.devopsaaas.shared.security.CurrentUser;
 import com.devopsaaas.shared.time.Timestamps;
 import com.devopsaaas.tool.execution.ToolCallAwaitingApproval;
+import com.devopsaaas.tool.execution.ToolCallRecord;
 import com.devopsaaas.tool.execution.ToolExecutionHistory;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -18,6 +21,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -58,15 +63,18 @@ public class ApprovalWorkflow {
     private final ApplicationEventPublisher events;
     private final TransactionTemplate transactions;
     private final ApprovalProperties properties;
+    private final MeterRegistry meters;
 
     ApprovalWorkflow(ApprovalRepository approvals, ToolExecutionHistory tools, AuditRecorder audit,
-            ApplicationEventPublisher events, TransactionTemplate transactions, ApprovalProperties properties) {
+            ApplicationEventPublisher events, TransactionTemplate transactions, ApprovalProperties properties,
+            MeterRegistry meters) {
         this.approvals = approvals;
         this.tools = tools;
         this.audit = audit;
         this.events = events;
         this.transactions = transactions;
         this.properties = properties;
+        this.meters = meters;
     }
 
     /** RF-41: in the transaction that recorded the call as WAITING_APPROVAL, so both exist or neither does. */
@@ -84,6 +92,7 @@ public class ApprovalWorkflow {
                 .detail("riskLevel", call.riskLevel())
                 .detail("argumentsHash", call.argumentsHash())
                 .detail("expiresAt", approval.getExpiresAt().toString()));
+        countAfterCommit(approval, call.toolName());
     }
 
     /**
@@ -114,6 +123,7 @@ public class ApprovalWorkflow {
                     .detail("argumentsHash", approval.getArgumentsHash())
                     .detail("riskLevel", approval.getRiskLevel())
                     .detail("withComment", comment != null && !comment.isBlank()));
+            countAfterCommit(approval, toolName(approval));
             publish(approval);
             return new Decided(approval);
         });
@@ -156,6 +166,7 @@ public class ApprovalWorkflow {
                                 AuditResourceType.APPROVAL, approval.getId())
                         .agentExecutionId(agentExecutionId)
                         .toolExecutionId(approval.getToolExecutionId()));
+                countAfterCommit(approval, toolName(approval));
                 cancelled++;
             }
         }
@@ -187,7 +198,41 @@ public class ApprovalWorkflow {
                 .outcome(AuditOutcome.FAILURE)
                 .agentExecutionId(approval.getAgentExecutionId())
                 .toolExecutionId(approval.getToolExecutionId()));
+        countAfterCommit(approval, toolName(approval));
         publish(approval);
+    }
+
+    /**
+     * Slice 9b: {@code devops.approvals} counts every approval by status (PENDING when requested) and tool, and
+     * {@code devops.approval.wait} times how long a human took (or the deadline, or the cancellation). Counted
+     * after the commit only, so a decision rolled back with its audit event (TM-B7-07) never shows up.
+     */
+    private void countAfterCommit(Approval approval, String toolName) {
+        ApprovalStatus status = approval.getStatus();
+        Duration waited = Duration.between(approval.getCreatedAt(), Timestamps.now());
+        Runnable count = () -> {
+            meters.counter("devops.approvals", "status", status.name(), "tool", toolName).increment();
+            if (status != ApprovalStatus.PENDING) {
+                meters.timer("devops.approval.wait", "status", status.name()).record(waited);
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    count.run();
+                }
+            });
+        } else {
+            count.run();
+        }
+    }
+
+    /** Tool names come from the closed catalog, so the label stays bounded. */
+    private String toolName(Approval approval) {
+        return tools.find(approval.getOrganizationId(), approval.getToolExecutionId())
+                .map(ToolCallRecord::toolName)
+                .orElse("unknown");
     }
 
     private void publish(Approval approval) {

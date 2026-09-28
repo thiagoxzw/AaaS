@@ -5,6 +5,7 @@ import com.devopsaaas.audit.AuditEntry;
 import com.devopsaaas.audit.AuditOutcome;
 import com.devopsaaas.audit.AuditRecorder;
 import com.devopsaaas.audit.AuditResourceType;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -13,6 +14,8 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * The recorded tool calls, for other modules: reads scoped by organization, and the two state changes that
@@ -24,10 +27,12 @@ public class ToolExecutionHistory {
 
     private final ToolExecutionRepository executions;
     private final AuditRecorder audit;
+    private final MeterRegistry meters;
 
-    ToolExecutionHistory(ToolExecutionRepository executions, AuditRecorder audit) {
+    ToolExecutionHistory(ToolExecutionRepository executions, AuditRecorder audit, MeterRegistry meters) {
         this.executions = executions;
         this.audit = audit;
+        this.meters = meters;
     }
 
     @Transactional(readOnly = true)
@@ -91,7 +96,8 @@ public class ToolExecutionHistory {
 
     /**
      * Startup recovery (RNF-CONF-09): a call left RUNNING by a crash may or may not have reached the runtime,
-     * so it becomes OUTCOME_UNKNOWN, never FAILED or SUCCEEDED.
+     * so it becomes OUTCOME_UNKNOWN, never FAILED or SUCCEEDED. Slice 9b (O-9b-1): counted in the same
+     * {@code devops.tool.executions} as a call the executor saw end, after the commit, once per call.
      */
     @Transactional
     public int recoverInterrupted() {
@@ -105,7 +111,24 @@ public class ToolExecutionHistory {
                     .toolName(execution.getToolName())
                     .agentExecutionId(execution.getAgentExecutionId())
                     .toolExecutionId(execution.getId()));
+            String tool = execution.getToolName();
+            String risk = execution.getRiskLevel() == null ? "NONE" : execution.getRiskLevel().name();
+            afterCommit(() -> meters.counter("devops.tool.executions", "tool", tool,
+                    "status", ToolExecutionStatus.OUTCOME_UNKNOWN.name(), "risk", risk).increment());
         }
         return running.size();
+    }
+
+    private static void afterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
     }
 }

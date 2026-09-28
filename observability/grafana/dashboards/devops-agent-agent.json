@@ -1,0 +1,567 @@
+{
+  "uid": "devops-agent-agent",
+  "title": "DevOps Agent — Agent",
+  "description": "Slice 9b: what the agent did, what waited for a human, how restarts ended, and what the LLM cost, since the backend last started.",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "templating": {
+    "list": []
+  },
+  "tags": [
+    "devops-agent"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Agent executions",
+      "description": "Executions that ended in the selected range (every final status). Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(devops_agent_executions_total)",
+          "legendFormat": "executions"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Approvals requested",
+      "description": "Approvals created: every risky proposal that waited for a human. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(devops_approvals_total{status=\"PENDING\"})",
+          "legendFormat": "requested"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Restarts verified",
+      "description": "Restarts the runtime accepted and the tool then verified (any verification result). Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(devops_tool_restart_verification_total)",
+          "legendFormat": "verified"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Restarts with unknown outcome",
+      "description": "restartContainer calls recorded as OUTCOME_UNKNOWN, seen live by the executor or set by the startup recovery after a crash: the request may or may not have reached Docker. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(devops_tool_executions_total{tool=\"restartContainer\",status=\"OUTCOME_UNKNOWN\"})",
+          "legendFormat": "unknown"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Executions by final status",
+      "description": "COMPLETED, FAILED, BUDGET_EXCEEDED, INTERRUPTED, CANCELLED. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (status) (devops_agent_executions_total)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "Approvals by status",
+      "description": "PENDING = requested; the others are how each approval ended. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (status) (devops_approvals_total)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Approval wait (p50 / p95)",
+      "description": "From the request to the decision, the expiry or the cancellation. Counted since the backend started: Prometheus increase() and rate() drop the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (devops_approval_wait_seconds_bucket))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (devops_approval_wait_seconds_bucket))",
+          "legendFormat": "p95"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "restartContainer calls by status",
+      "description": "WAITING_APPROVAL = requested; then SUCCEEDED, DENIED, OUTCOME_UNKNOWN, FAILED. Each call is counted at every recorded step. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (status) (devops_tool_executions_total{tool=\"restartContainer\"})",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 9,
+      "type": "bargauge",
+      "title": "Restart verification",
+      "description": "What the tool saw after the runtime accepted the restart. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (verification) (devops_tool_restart_verification_total)",
+          "legendFormat": "{{verification}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 10,
+      "type": "bargauge",
+      "title": "Restart verification duration (p95)",
+      "description": "From the accepted restart to a verification result. Counted since the backend started: Prometheus increase() and rate() drop the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, verification) (devops_tool_restart_verification_duration_seconds_bucket))",
+          "legendFormat": "{{verification}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Policy denials by reason",
+      "description": "UNKNOWN_TOOL, INVALID_ARGUMENTS, RESOURCE_NOT_ALLOWED, NOT_ALLOWED_BY_AUTONOMY, ARGUMENTS_MISMATCH… Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (reason) (devops_tool_denials_total)",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 12,
+      "type": "bargauge",
+      "title": "LLM calls by outcome",
+      "description": "Every call to the provider, by outcome. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (outcome) (devops_llm_calls_seconds_count)",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 13,
+      "type": "bargauge",
+      "title": "LLM tokens",
+      "description": "Input and output tokens reported by the provider. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (direction) (devops_llm_tokens_total)",
+          "legendFormat": "{{direction}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "LLM estimated cost",
+      "description": "Estimated with the price table in the configuration. Counted since the backend started: Prometheus increase() drops the first increment of a series created by that event, which in a low-volume system is most of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(devops_llm_cost_usd_total)",
+          "legendFormat": "USD"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      }
+    }
+  ]
+}

@@ -32,6 +32,9 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        # Slice 9b: p95 on the Agente dashboard.
+        devops.approval.wait: true
+        devops.tool.restart.verification.duration: true
 
 logging:
   structured:

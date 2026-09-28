@@ -16,6 +16,7 @@ import com.devopsaaas.tool.container.ContainerState;
 import com.devopsaaas.tool.container.FakeContainerRuntime;
 import com.devopsaaas.tool.container.FakeContainerRuntime.AfterRestart;
 import com.devopsaaas.tool.container.HealthStatus;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -31,8 +32,9 @@ import org.junit.jupiter.api.Test;
 class RestartContainerToolTest {
 
     private final FakeContainerRuntime runtime = new FakeContainerRuntime();
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     private final RestartContainerTool tool = new RestartContainerTool(runtime, new RestartProperties(
-            Duration.ofSeconds(10), Duration.ofMillis(600), Duration.ofMillis(10), Duration.ofMillis(100)));
+            Duration.ofSeconds(10), Duration.ofMillis(600), Duration.ofMillis(10), Duration.ofMillis(100)), meters);
 
     @Test
     void aContainerThatComesBackHealthy_isVerifiedHealthy() {
@@ -153,6 +155,28 @@ class RestartContainerToolTest {
     }
 
     // ---- helpers -----------------------------------------------------------------------------------------
+
+    /**
+     * Slice 9b: every verification is counted and timed by its outcome. A restart whose own call failed (the
+     * executor records OUTCOME_UNKNOWN) is never counted as verified.
+     */
+    @Test
+    void everyVerification_isCountedAndTimed_byItsOutcome_andAnUnknownOutcomeIsNot() {
+        run(running("healthy", HealthStatus.HEALTHY));
+        ContainerRef unhealthy = running("unhealthy", HealthStatus.HEALTHY);
+        runtime.afterRestart(unhealthy.containerName(), FakeContainerRuntime.AfterRestart.UNHEALTHY);
+        run(unhealthy);
+        ContainerRef drops = running("drops", HealthStatus.HEALTHY);
+        runtime.failRestartWith(drops.containerName(), ContainerRuntimeException.Category.UNAVAILABLE);
+        assertThatThrownBy(() -> run(drops)).isInstanceOf(ContainerRuntimeException.class);
+
+        assertThat(meters.counter("devops.tool.restart.verification", "verification", "HEALTHY").count()).isOne();
+        assertThat(meters.counter("devops.tool.restart.verification", "verification", "UNHEALTHY").count()).isOne();
+        assertThat(meters.find("devops.tool.restart.verification").counters()).hasSize(2);
+        assertThat(meters.timer("devops.tool.restart.verification.duration", "verification", "HEALTHY").count())
+                .isOne();
+        assertThat(meters.find("devops.tool.restart.verification.duration").timers()).hasSize(2);
+    }
 
     private ContainerRef running(String name, HealthStatus health) {
         ContainerRef ref = FakeContainerRuntime.ref(UUID.randomUUID(), "demo-api", name + "-" + UUID.randomUUID());

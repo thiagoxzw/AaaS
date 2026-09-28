@@ -15,17 +15,25 @@ import com.devopsaaas.tool.container.ContainerState;
 import com.devopsaaas.tool.container.FakeContainerRuntime;
 import com.devopsaaas.tool.container.HealthStatus;
 import com.devopsaaas.tool.container.LogLine;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -36,6 +44,7 @@ import tools.jackson.databind.JsonNode;
 class RestartContainerIT extends AgentTestSupport {
 
     private static final List<String> NOT_FINISHED = List.of("QUEUED", "RUNNING", "WAITING_APPROVAL");
+    private static final java.util.regex.Pattern SERIES = java.util.regex.Pattern.compile("devops_[a-z_]+");
     private static final String REASON =
             "The user asked to fix demo-api; the status and logs were checked first (scripted demo).";
 
@@ -50,6 +59,12 @@ class RestartContainerIT extends AgentTestSupport {
 
     @Autowired
     ApprovalResumption resumption;
+
+    @Value("${local.management.port}")
+    int managementPort;
+
+    @Autowired
+    MeterRegistry meters;
 
     private TestUser admin;
     private TestUser operator;
@@ -347,6 +362,45 @@ class RestartContainerIT extends AgentTestSupport {
         assertThat(restarts()).isZero();
     }
 
+    /**
+     * Slice 9b, observation O-9b-1 (closed): an OUTCOME_UNKNOWN set by the startup recovery is counted in the same
+     * series as one the executor saw live, exactly once, whatever runs after it. Cumulative counter: deltas.
+     */
+    @Test
+    void anUnknownOutcome_isCountedOnce_whetherSeenLiveOrSetByTheRecovery() {
+        double before = unknownRestarts();
+
+        // Live: the connection drops after the request.
+        String droppingContainer = uniqueName("dropping-container");
+        String dropping = environment(admin, "ASSISTED", droppingContainer);
+        runtime.failRestartWith(droppingContainer, ContainerRuntimeException.Category.UNAVAILABLE);
+        JsonNode live = ask(operator, conversation(operator, dropping), question());
+        decide(approver, approvalOf(live).get("approvalId").asString(), "APPROVE", null);
+        finished(operator, live.get("executionId").asString());
+        assertThat(unknownRestarts() - before).as("seen live by the executor").isOne();
+
+        // Recovery: the backend died while the call was running (rows as the dead process leaves them).
+        JsonNode crashed = ask(operator, conversation(operator, environment), question());
+        decide(approver, approvalOf(crashed).get("approvalId").asString(), "APPROVE", null);
+        String executionId = crashed.get("executionId").asString();
+        String toolExecution = actions(finished(operator, executionId)).getLast().get("toolExecutionId").asString();
+        jdbc.update("UPDATE tool_execution SET status = 'RUNNING', output = NULL, finished_at = NULL, "
+                + "duration_ms = NULL WHERE id = ?::uuid", toolExecution);
+        jdbc.update("UPDATE agent_execution SET status = 'RUNNING', finished_at = NULL WHERE id = ?::uuid",
+                executionId);
+
+        recovery.recover();
+        assertThat(unknownRestarts() - before).as("plus the one set by the recovery").isEqualTo(2);
+        recovery.recover();
+        resumption.sweep();
+        assertThat(unknownRestarts() - before).as("a second recovery and the sweep add nothing").isEqualTo(2);
+    }
+
+    private double unknownRestarts() {
+        return meters.counter("devops.tool.executions", "tool", "restartContainer", "status", "OUTCOME_UNKNOWN",
+                "risk", "HIGH_RISK").count();
+    }
+
     /** S6 in the arguments: "userApproved" is not part of the input, so the call is invalid and never waits. */
     @Test
     void anApprovalClaimedInsideTheArguments_isInvalid_andCreatesNoApproval() {
@@ -407,6 +461,42 @@ class RestartContainerIT extends AgentTestSupport {
         JsonNode pending = explain(approver, toolExecution);
         assertThat(pending.get("result").get("status").asString()).isEqualTo("WAITING_APPROVAL");
         assertThat(pending.get("approval").get("status").asString()).isEqualTo("PENDING");
+    }
+
+    /**
+     * Slice 9b: every series the Agente dashboard queries exists in the real scrape once an approved restart and a
+     * denial have happened, and the new ones carry the labels the panels group by. A renamed metric or a typo in
+     * the dashboard fails here instead of showing an empty panel.
+     */
+    @Test
+    void everySeriesOfTheAgentDashboard_isExposed_withTheLabelsItGroupsBy() throws Exception {
+        JsonNode waiting = ask(operator, conversation(operator, environment), question());
+        decide(approver, approvalOf(waiting).get("approvalId").asString(), "APPROVE", null);
+        finished(operator, waiting.get("executionId").asString());
+        finished(operator, ask(operator, conversation(operator, environment),
+                "[RESTART-EXTRA-ARGUMENT] " + uniqueName("q")).get("executionId").asString());
+
+        String dashboard = Files.readString(Path.of("..", "observability", "grafana", "dashboards",
+                "devops-agent-agent.json"));
+        Set<String> series = new TreeSet<>();
+        Matcher names = SERIES.matcher(dashboard);
+        while (names.find()) {
+            series.add(names.group());
+        }
+        String scrape = RestClient.create().get().uri("http://localhost:" + managementPort + "/actuator/prometheus")
+                .retrieve().body(String.class);
+
+        assertThat(series).hasSizeGreaterThanOrEqualTo(10);
+        for (String name : series) {
+            assertThat(scrape).as("series %s of the dashboard", name).containsPattern("(?m)^" + name + "\\{");
+        }
+        assertThat(scrape)
+                .containsPattern("(?m)^devops_approvals_total\\{[^}]*status=\"PENDING\"[^}]*tool=\"restartContainer\"")
+                .containsPattern("(?m)^devops_approvals_total\\{[^}]*status=\"APPROVED\"[^}]*tool=\"restartContainer\"")
+                .containsPattern("(?m)^devops_approval_wait_seconds_bucket\\{[^}]*status=\"APPROVED\"")
+                .containsPattern("(?m)^devops_tool_restart_verification_total\\{[^}]*verification=\"HEALTHY\"")
+                .containsPattern("(?m)^devops_tool_restart_verification_duration_seconds_bucket\\{[^}]*"
+                        + "verification=\"HEALTHY\"");
     }
 
     // ---- helpers -----------------------------------------------------------------------------------------
