@@ -190,6 +190,15 @@ dois erros vêm dos logs de execuções anteriores do mesmo container, que o bac
 A correção muda o contrato das ferramentas, por isso vai ter desenho próprio antes da fatia 7, seguido de uma
 nova medição com os mesmos 5 cenários ([detalhes](fatias/06-llm-real.md#validação-com-o-modelo-real)).
 
+### Fatia 6.1 — Dados atuais para o diagnóstico (acrescentada)
+
+**Prova:** o agente recebe evidência da execução atual, e não histórico apresentado como atual.
+
+**Resultado** ([detalhes](fatias/06-1-dados-atuais.md)): `getContainerLogs` lê por padrão só a execução atual
+(`since` = `StartedAt`, com nanossegundos), um `since` explícito alcança as anteriores, `health` vira
+`NOT_APPLICABLE` fora de `RUNNING` e o achado `RESTART_LOOP` diz como ver as execuções anteriores. O prompt não
+mudou. A nova medição de H2, com os mesmos 5 cenários, fica com o autor.
+
 ### Fatia 7 — Aprovação
 
 **Prova:** a aprovação humana é uma máquina de estados estruturada, segura contra replay, TOCTOU e
