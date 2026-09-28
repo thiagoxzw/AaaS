@@ -329,12 +329,17 @@ incrementa o contador; ele conta só os reinícios feitos pela restart policy. P
   requests will fail and the service will be unavailable for a few seconds or more."*
 - **Comportamento:**
   1. lê o estado anterior (`stateBefore`);
-  2. pede o restart ao runtime, com um tempo de parada gracioso configurável (padrão de 10 s; a Docker API
-     aceita esse parâmetro no endpoint de restart, o que vou confirmar na implementação);
-  3. **verifica deterministicamente** o resultado: consulta o estado até ficar `RUNNING` e, se houver
-     healthcheck, `HEALTHY`, ou até esgotar uma janela de verificação (padrão de 60 s).
-- **Saída:** `service`, `stateBefore`, `stateAfter`, `healthAfter`, `restartedAt` e `verification`
-  (`HEALTHY`, `RUNNING_NO_HEALTHCHECK`, `UNHEALTHY`, `NOT_RUNNING` ou `VERIFICATION_TIMEOUT`).
+  2. pede o restart ao runtime, com um tempo de parada gracioso configurável (padrão de 10 s, limite de
+     30 s; **confirmado na fatia 8**: `POST /containers/{nome}/restart?t=10`, e a resposta só chega quando o
+     container voltou, por isso o adapter usa um *read timeout* próprio de 60 s para essa chamada);
+  3. **verifica deterministicamente** o resultado: consulta o estado a cada 1 s até ficar `RUNNING` e, se
+     houver healthcheck, `HEALTHY`, ou até esgotar uma janela de verificação (padrão de 60 s, e nunca além de
+     2 s antes do timeout de 90 s da ferramenta). **Só conta como reiniciado se o `StartedAt` mudou** (o
+     `RestartCount` do Docker não muda num restart pedido pela API). Sem healthcheck, `RUNNING` precisa ficar
+     estável por 5 s.
+- **Saída:** `service`, `stateBefore`, `stateAfter`, `healthAfter`, `restartedAt`, `restartObserved` (fatia 8:
+  se um novo `StartedAt` foi visto) e `verification` (`HEALTHY`, `RUNNING_NO_HEALTHCHECK`, `UNHEALTHY`,
+  `NOT_RUNNING` ou `VERIFICATION_TIMEOUT`).
 - **Por que a verificação fica dentro da ferramenta, e não a cargo do LLM:** confirmar se o serviço voltou
   é uma regra objetiva. O modelo não precisa "lembrar" de verificar (ele pode, e provavelmente vai,
   chamar `getContainerStatus` depois, mas o resultado já vem confiável da ferramenta).
@@ -342,7 +347,10 @@ incrementa o contador; ele conta só os reinícios feitos pela restart policy. P
   (`UNHEALTHY`, `NOT_RUNNING`) **não** vira `FAILED`: ela aparece no campo `verification` e gera um achado
   HIGH. Assim, "o comando funcionou" e "o serviço voltou saudável" continuam sendo informações distintas.
 - **Nunca há retentativa automática.** Em caso de timeout ou queda depois de o pedido ter sido enviado, o
-  estado é `OUTCOME_UNKNOWN`.
+  estado é `OUTCOME_UNKNOWN`: **não sabemos se o restart aconteceu**, o que é diferente de "falhou". Se o
+  `inspect` inicial falhar, o restart não foi enviado, e a chamada é `FAILED` (`RUNTIME_UNAVAILABLE`).
+- **Implementada na fatia 8** ([detalhes](fatias/08-restart.md)); o `reason` é declarado como
+  `justificationParameter` da definição.
 
 ## 9. O port `ContainerRuntime`
 
