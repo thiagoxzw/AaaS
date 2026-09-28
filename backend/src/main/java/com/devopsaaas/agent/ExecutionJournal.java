@@ -1,5 +1,6 @@
 package com.devopsaaas.agent;
 
+import com.devopsaaas.approval.ApprovalWorkflow;
 import com.devopsaaas.audit.AuditAction;
 import com.devopsaaas.audit.AuditEntry;
 import com.devopsaaas.audit.AuditOutcome;
@@ -46,18 +47,20 @@ class ExecutionJournal {
     private final MessageRepository messages;
     private final LlmCallRepository llmCalls;
     private final ToolExecutionHistory tools;
+    private final ApprovalWorkflow approvals;
     private final AuditRecorder audit;
     private final TransactionTemplate transactions;
     private final MeterRegistry meters;
 
     ExecutionJournal(AgentExecutionRepository executions, ConversationRepository conversations,
-            MessageRepository messages, LlmCallRepository llmCalls, ToolExecutionHistory tools, AuditRecorder audit,
-            TransactionTemplate transactions, MeterRegistry meters) {
+            MessageRepository messages, LlmCallRepository llmCalls, ToolExecutionHistory tools,
+            ApprovalWorkflow approvals, AuditRecorder audit, TransactionTemplate transactions, MeterRegistry meters) {
         this.executions = executions;
         this.conversations = conversations;
         this.messages = messages;
         this.llmCalls = llmCalls;
         this.tools = tools;
+        this.approvals = approvals;
         this.audit = audit;
         this.transactions = transactions;
         this.meters = meters;
@@ -71,16 +74,35 @@ class ExecutionJournal {
                 return Optional.empty();
             }
             execution.start();
-            Conversation conversation = conversations
-                    .findByIdAndOrganizationId(execution.getConversationId(), ref.organizationId())
-                    .orElseThrow();
-            int triggerSeq = messages.findByIdAndOrganizationId(execution.getTriggerMessageId(), ref.organizationId())
-                    .orElseThrow().getSeq();
             audit.record(agent(execution, AuditAction.AGENT_EXECUTION_STARTED, AuditOutcome.SUCCESS));
-            return Optional.of(new ExecutionState(execution.getId(), execution.getOrganizationId(),
-                    conversation.getId(), conversation.getEnvironmentId(), execution.getRequestedBy(), triggerSeq,
-                    execution.getContextSnapshot()));
+            return Optional.of(state(execution));
         });
+    }
+
+    /**
+     * Slice 7: WAITING_APPROVAL → RUNNING, once nothing of this execution is PENDING for a human anymore. The
+     * transition is conditional under the row lock, so two resumptions arriving together produce one. Empty
+     * when there is nothing to resume (still pending, already resumed, cancelled).
+     */
+    Optional<ExecutionState> resume(ExecutionRef ref) {
+        return transactions.execute(status -> {
+            AgentExecution execution = lock(ref);
+            if (execution.getStatus() != AgentExecutionStatus.WAITING_APPROVAL
+                    || approvals.hasPending(ref.organizationId(), ref.executionId())) {
+                return Optional.empty();
+            }
+            execution.resumeAfterApproval();
+            audit.record(agent(execution, AuditAction.AGENT_EXECUTION_RESUMED, AuditOutcome.SUCCESS));
+            return Optional.of(state(execution));
+        });
+    }
+
+    /** Executions waiting for a human, across organizations: only the approval sweep uses this, as the system. */
+    List<ExecutionRef> waitingForApproval() {
+        return transactions.execute(status -> executions
+                .findAllByStatusOrderByCreatedAtAsc(AgentExecutionStatus.WAITING_APPROVAL).stream()
+                .map(execution -> new ExecutionRef(execution.getId(), execution.getOrganizationId()))
+                .toList());
     }
 
     /**
@@ -193,6 +215,7 @@ class ExecutionJournal {
             }
             if (execution.getStatus().isActive()) {
                 execution.cancel("CANCELLED_BY_USER");
+                approvals.cancelForExecution(user.organizationId(), execution.getId());
                 tools.cancelAwaitingApproval(user.organizationId(), execution.getId(), execution.getRequestedBy());
                 audit.record(AuditEntry.byUser(user, AuditAction.AGENT_EXECUTION_CANCELLED,
                                 AuditResourceType.EXECUTION, execution.getId())
@@ -209,6 +232,10 @@ class ExecutionJournal {
             List<AgentExecution> running = executions.findAllByStatusOrderByCreatedAtAsc(AgentExecutionStatus.RUNNING);
             for (AgentExecution execution : running) {
                 execution.finish(AgentExecutionStatus.INTERRUPTED, "BACKEND_RESTARTED");
+                // A call proposed or approved but not yet taken when the backend stopped never runs afterwards.
+                approvals.cancelForExecution(execution.getOrganizationId(), execution.getId());
+                tools.cancelAwaitingApproval(execution.getOrganizationId(), execution.getId(),
+                        execution.getRequestedBy());
                 audit.record(AuditEntry.bySystem(execution.getOrganizationId(),
                                 AuditAction.AGENT_EXECUTION_INTERRUPTED, AuditResourceType.EXECUTION, execution.getId())
                         .outcome(AuditOutcome.FAILURE)
@@ -228,6 +255,17 @@ class ExecutionJournal {
     }
 
     // ---- helpers ----------------------------------------------------------------------------------------
+
+    private ExecutionState state(AgentExecution execution) {
+        Conversation conversation = conversations
+                .findByIdAndOrganizationId(execution.getConversationId(), execution.getOrganizationId())
+                .orElseThrow();
+        int triggerSeq = messages.findByIdAndOrganizationId(execution.getTriggerMessageId(),
+                execution.getOrganizationId()).orElseThrow().getSeq();
+        return new ExecutionState(execution.getId(), execution.getOrganizationId(), conversation.getId(),
+                conversation.getEnvironmentId(), execution.getRequestedBy(), triggerSeq,
+                execution.getContextSnapshot());
+    }
 
     private AgentExecution lock(ExecutionRef ref) {
         return executions.lockByIdAndOrganizationId(ref.executionId(), ref.organizationId())

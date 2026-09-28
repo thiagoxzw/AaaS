@@ -1,5 +1,6 @@
 package com.devopsaaas.agent;
 
+import com.devopsaaas.approval.ApprovalQueries;
 import com.devopsaaas.tool.api.RiskLevel;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -18,6 +19,7 @@ public record ExecutionView(
         String statusReason,
         Answer answer,
         List<Action> actions,
+        List<ApprovalQueries.ApprovalSummary> approvals,
         Budget budget,
         Usage usage,
         String llmModel,
@@ -28,6 +30,7 @@ public record ExecutionView(
 
     public ExecutionView {
         actions = List.copyOf(actions);
+        approvals = List.copyOf(approvals);
     }
 
     /** {@code complete=false}: the model's output was cut by its token limit; the text is partial. */

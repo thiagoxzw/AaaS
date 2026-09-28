@@ -64,6 +64,25 @@ public class ToolExecutionHistory {
     }
 
     /**
+     * Slice 7, within the approval's transaction: a human rejected the call, or nobody decided in time. Only a
+     * call still WAITING_APPROVAL changes; the approval's own audit event records the decision.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean closeWaiting(UUID organizationId, UUID toolExecutionId, boolean rejected) {
+        return executions.lockByIdAndOrganizationId(toolExecutionId, organizationId)
+                .filter(execution -> execution.getStatus() == ToolExecutionStatus.WAITING_APPROVAL)
+                .map(execution -> {
+                    if (rejected) {
+                        execution.reject();
+                    } else {
+                        execution.expire();
+                    }
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    /**
      * Startup recovery (RNF-CONF-09): a call left RUNNING by a crash may or may not have reached the runtime,
      * so it becomes OUTCOME_UNKNOWN, never FAILED or SUCCEEDED.
      */

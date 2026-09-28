@@ -142,6 +142,13 @@ public class AgentExecution {
         updatedAt = Timestamps.now();
     }
 
+    /** Slice 7: nothing is pending for a human anymore; the loop goes on with the decided calls. */
+    void resumeAfterApproval() {
+        require(AgentExecutionStatus.WAITING_APPROVAL);
+        status = AgentExecutionStatus.RUNNING;
+        updatedAt = Timestamps.now();
+    }
+
     /** RUNNING → a terminal status. */
     void finish(AgentExecutionStatus terminal, String reason) {
         require(AgentExecutionStatus.RUNNING);

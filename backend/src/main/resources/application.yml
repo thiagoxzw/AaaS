@@ -63,6 +63,12 @@ devops:
     workers: 4
     queue-capacity: 50
     recover-on-startup: true
+  approval:
+    # Human approval of risky calls (slice 7, RF-41..43, ADR-0006).
+    ttl: 15m
+    # Closes approvals past their deadline and resumes executions with nothing pending left.
+    sweep-interval: 30s
+    sweep-enabled: true
   llm:
     # scripted: deterministic scripts from classpath:llm-scripts, no API key.
     # openai: the Responses API (slice 6); needs the key, the model, the prices and a daily budget.

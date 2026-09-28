@@ -1,5 +1,6 @@
 package com.devopsaaas.agent;
 
+import com.devopsaaas.approval.ApprovalQueries;
 import com.devopsaaas.environment.EnvironmentDirectory;
 import com.devopsaaas.shared.error.ApiException;
 import com.devopsaaas.shared.security.CurrentUser;
@@ -20,14 +21,17 @@ public class ExecutionQueries {
     private final MessageRepository messages;
     private final ToolExecutionHistory tools;
     private final EnvironmentDirectory environments;
+    private final ApprovalQueries approvals;
 
     ExecutionQueries(AgentExecutionRepository executions, ConversationRepository conversations,
-            MessageRepository messages, ToolExecutionHistory tools, EnvironmentDirectory environments) {
+            MessageRepository messages, ToolExecutionHistory tools, EnvironmentDirectory environments,
+            ApprovalQueries approvals) {
         this.executions = executions;
         this.conversations = conversations;
         this.messages = messages;
         this.tools = tools;
         this.environments = environments;
+        this.approvals = approvals;
     }
 
     @Transactional(readOnly = true)
@@ -53,6 +57,7 @@ public class ExecutionQueries {
                 .orElse(null);
         return new ExecutionView(execution.getId(), execution.getConversationId(), execution.getStatus(),
                 execution.getStatusReason(), answer, actions,
+                approvals.forExecution(organizationId, execution.getId()),
                 new ExecutionView.Budget(execution.getToolCallCount(), execution.getMaxToolCalls(),
                         execution.getLlmIterationCount(), execution.getMaxLlmIterations(), execution.getActiveMs(),
                         execution.getMaxActiveMs()),

@@ -10,5 +10,10 @@ public enum DenialReason {
     INSUFFICIENT_PERMISSION,
     BUDGET_EXCEEDED,
     /** The evaluation itself failed; the policy fails closed. */
-    POLICY_ERROR
+    POLICY_ERROR,
+    /**
+     * Slice 7: an approved call whose stored arguments no longer produce the hash the human approved. The call
+     * is never run; the approval stays as it was decided.
+     */
+    ARGUMENTS_MISMATCH
 }

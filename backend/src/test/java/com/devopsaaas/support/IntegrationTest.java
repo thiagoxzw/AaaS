@@ -50,7 +50,9 @@ import tools.jackson.databind.json.JsonMapper;
                 "devops.bootstrap.admin-email=" + IntegrationTest.BOOTSTRAP_EMAIL,
                 "devops.bootstrap.admin-password=" + IntegrationTest.BOOTSTRAP_PASSWORD,
                 // Tests share one database; the recovery is exercised explicitly (AgentRecoveryIT).
-                "devops.agent.recover-on-startup=false"
+                "devops.agent.recover-on-startup=false",
+                // The approval sweep is exercised explicitly too (ApprovalIT calls it directly).
+                "devops.approval.sweep-enabled=false"
         })
 @Import({TestToolsConfiguration.class, TestLlmConfiguration.class})
 public abstract class IntegrationTest {

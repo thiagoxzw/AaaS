@@ -1,0 +1,14 @@
+{
+  "name": "test-approval-echo",
+  "when": "\\[APPROVAL-ECHO\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "Restarting demo-api.",
+      "toolCalls": [{"name": "testRestart", "arguments": {"service": "demo-api"}}]
+    },
+    {
+      "text": "Result: {{lastToolResult}}"
+    }
+  ]
+}
