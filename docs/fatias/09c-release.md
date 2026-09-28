@@ -1,7 +1,7 @@
 # Fatia 9c — Reprodutibilidade e release
 
-> Status: **em revisão**. Demonstração, avaliação, varredura de imagens e README prontos. O achado do Trivy
-> (9c-01) e a política de bloqueio aguardam decisão. Plano: [07 — Plano do MVP](../07-plano-do-mvp.md), fatia 9.
+> Status: **implementada** (2026-09-28), por decisão do autor: o Tomcat subiu para 11.0.26 (9c-01), e o CI
+> bloqueia só CRITICAL com correção disponível (9c-02). Plano: [07 — Plano do MVP](../07-plano-do-mvp.md), fatia 9.
 
 ## Objetivo
 
@@ -16,7 +16,7 @@ mandar.
 |---|---|
 | `scripts/demo.sh` | O roteiro canônico em 9 passos: login, ambiente e allowlist, quebrar o `demo-api`, perguntar, a aprovação (`system` × `agentClaims`), decidir, o que rodou e a verificação, a explicação da ação, a auditoria por recurso. `--yes` aprova sozinho; sem terminal, rejeita e diz como recuperar o `demo-api`. Com a OpenAI, se o modelo não propuser o restart, o script mostra a resposta e termina. Funciona no Git Bash e nunca imprime o token nem nada do `.env` |
 | `scripts/evaluate-agent.sh` | Além da tabela para a avaliação humana, grava `evaluation-*.jsonl` com uma linha por cenário: commit (com `-dirty` se houver mudanças locais), provedor, modelo, versão do prompt, cenário, causa real, horário, custo, estado da execução e estado final, cada chamada com os argumentos gravados (`service`, `tail`, `since`), o `scope` dos logs lidos (`CURRENT_RUN`, `SINCE`, `ALL_RUNS`), o resultado, o motivo de negação e os achados. Os argumentos vêm de `GET /tool-executions/{id}`, já mascarados. Os achados também vêm da API: o script deixou de consultar o banco |
-| CI: Trivy | O job `image` constrói as duas imagens e as varre com o `aquasec/trivy:0.74.0`, **só como relatório** (`--exit-code 0`): o resumo por severidade vai para a página do job, e os JSON viram o artefato `image-scan`. `scripts/trivy-summary.sh` monta o resumo |
+| CI: Trivy | O job `image` constrói as duas imagens e as varre com o `aquasec/trivy:0.74.0`. O resumo por severidade vai para a página do job (`scripts/trivy-summary.sh`), e os JSON viram o artefato `image-scan`, guardado mesmo quando o job falha. Depois, `scripts/trivy-gate.sh` aplica a política 9c-02 |
 | README | Reescrito na estrutura: o que é, demonstração, arquitetura, fluxo de segurança, como executar, testes, threat model, decisões, limitações, roadmap |
 
 **Demonstração executada** no compose (2026-09-28), com o provedor `scripted`:
@@ -40,6 +40,10 @@ O resultado oficial é o do CI.
 | Pacotes do sistema (Alpine 3.24.2), nas duas imagens | 0 | 0 | 0 | 0 |
 | Dependências Java, nas duas imagens | **3** | 0 | 0 | 0 |
 
+**As severidades são as do Trivy**, não a classificação oficial do Apache Tomcat. Segundo o autor, o Apache
+classifica o CVE-2026-65182 como *Important* e os outros dois como *Low*. Não foi possível confirmar aqui,
+porque o `tomcat.apache.org` é bloqueado pela política de rede deste ambiente.
+
 As três são do `org.apache.tomcat.embed:tomcat-embed-core` **11.0.24**, a versão que o BOM do Spring Boot
 4.1.1 fixa (`tomcat.version`). Todas estão corrigidas na **11.0.25**:
 
@@ -58,10 +62,37 @@ não foi verificado.
 - o Spring Boot 4.1.1 ainda é o último 4.1.x lá;
 - sobrescrever `<tomcat.version>` no `pom.xml` é o mecanismo do próprio BOM.
 
-**Nada foi mudado.** Duas decisões ficam com o autor:
-1. **Corrigir agora ou não.** Sobrescrever `tomcat.version` para uma versão corrigida, rodar a suíte e varrer de
-   novo; ou esperar um Spring Boot 4.1.x que já traga a versão.
-2. **Política de bloqueio da release.** Quais severidades bloqueiam o CI ou a tag. Hoje nada bloqueia.
+### Decisões do autor e correção
+
+**9c-01, corrigido.** O `pom.xml` raiz sobrescreve `<tomcat.version>11.0.26</tomcat.version>`, a propriedade
+do próprio BOM do Spring Boot. Isso vale para o backend e o `demo-api`. A exceção por "provavelmente não
+explorável" não foi usada, porque existe versão corrigida. O override sai quando o Spring Boot passar a
+gerenciar a 11.0.26 ou mais nova.
+
+| Verificação | Resultado |
+|---|---|
+| `dependency:tree` | `tomcat-embed-core`, `-websocket` e `-el` em 11.0.26 |
+| `./mvnw verify` (inclusive `RealDockerIT`, com Docker real) | 520 testes, 0 falhas, SpotBugs sem achados |
+| Integração em ordem reversa | 162 testes, 0 falhas |
+| Trivy nas duas imagens, reconstruídas | **0 vulnerabilidades de qualquer severidade**, sistema e Java |
+| `scripts/trivy-gate.sh` | Sai com 0 nos relatórios novos e com 1 nos antigos (as 3 corrigíveis nas duas imagens) |
+| Compose com as imagens novas | O jar do backend traz `tomcat-embed-core-11.0.26.jar`; `scripts/demo.sh --yes` fechou o fluxo com `HEALTHY` |
+
+**Achado de processo:** a primeira reconstrução local, com `package` incremental, manteve dentro do jar
+executável as dependências antigas (11.0.24), mesmo com a árvore já em 11.0.26. Os testes não foram afetados,
+porque usam o *classpath* do Maven. Só um `clean package` gerou o jar certo. A segunda varredura pegou isso. O
+CI não tem o problema: o `docker build` compila do zero.
+
+**9c-02, política do CI:**
+
+| Resultado da varredura | CI |
+|---|---|
+| CRITICAL com correção disponível | **falha** |
+| CRITICAL sem correção | reporta |
+| HIGH, MEDIUM, LOW | reporta |
+
+O resumo e o artefato são gerados antes da verificação, então o relatório fica disponível mesmo quando ela
+falha.
 
 ## Medição final de H2 (na máquina do autor)
 
@@ -83,5 +114,5 @@ ferramentas e o próprio modelo pode ter mudado.
 ## Ordem até a release
 
 ```
-9c (este PR) → decisões sobre o 9c-01 → medição final de H2 → revisão final → tag v0.1.0 (quando o autor mandar)
+9c (este PR, com o Tomcat 11.0.26) → CI verde → medição final de H2 → revisão final → tag v0.1.0 (quando o autor mandar)
 ```

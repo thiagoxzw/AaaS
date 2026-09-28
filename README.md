@@ -257,8 +257,8 @@ O CI roda:
 - o `verify`;
 - a checagem do Compose (portas, socket, lista permitida do proxy, `stdin_open`);
 - o Gitleaks;
-- o build das imagens e a varredura delas com o Trivy (só relatório, veja
-  [9c](docs/fatias/09c-release.md)).
+- o build das imagens e a varredura delas com o Trivy. Uma vulnerabilidade CRITICAL com correção disponível
+  falha o CI; o resto é reportado ([9c](docs/fatias/09c-release.md)).
 
 ## Threat model
 

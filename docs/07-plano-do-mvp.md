@@ -274,11 +274,17 @@ concluiu o restart, o sistema registrou `OUTCOME_UNKNOWN` e não houve segundo p
 atribuído pela recuperação passou a contar na mesma métrica (O-9b-1). O desligamento gracioso que não espera as
 chamadas em andamento ficou registrado como limitação conhecida (O-9b-2).
 
-**Fatia 9c — reprodutibilidade e release, em revisão** ([detalhes](fatias/09c-release.md)): `scripts/demo.sh`
-(o roteiro canônico em 9 passos), dados brutos em `scripts/evaluate-agent.sh` (commit, modelo, versão do prompt,
-argumentos e escopo de cada chamada, decisões e estado final), a varredura das imagens com o Trivy no CI, só como
-relatório, e o README reescrito. A varredura encontrou 3 CVEs críticos no Tomcat embutido (9c-01), que aguardam
-decisão junto com a política de bloqueio. Depois: a medição final de H2, a revisão final e a tag `v0.1.0`.
+**Resultado da fatia 9c — reprodutibilidade e release** ([detalhes](fatias/09c-release.md)):
+- `scripts/demo.sh`, o roteiro canônico em 9 passos;
+- dados brutos em `scripts/evaluate-agent.sh`: commit, modelo, versão do prompt, argumentos e escopo de cada
+  chamada, decisões e estado final;
+- a varredura das imagens com o Trivy no CI;
+- o README reescrito.
+
+A varredura encontrou 3 vulnerabilidades classificadas como CRITICAL pelo Trivy no Tomcat embutido 11.0.24
+(9c-01). O Tomcat subiu para 11.0.26, e as imagens ficaram sem nenhuma vulnerabilidade reportada. O CI passou a
+falhar em CRITICAL com correção disponível (9c-02). Depois vêm a medição final de H2, a revisão final e a tag
+`v0.1.0`.
 
 ## 4. Definição de pronto (vale para toda fatia)
 

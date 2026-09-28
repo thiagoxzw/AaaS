@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Slice 9c: turns Trivy JSON reports into a markdown summary for the CI job page. Report-only: it lists what
-# the images contain by severity and never fails the build (which severities block a release is a separate
-# decision, docs/fatias/09c-release.md).
+# Slice 9c: turns Trivy JSON reports into a markdown summary for the CI job page: what the images contain, by
+# severity. It never fails the build itself; scripts/trivy-gate.sh applies the release policy (a CRITICAL with a
+# fix available blocks), docs/fatias/09c-release.md.
 set -euo pipefail
 
-echo "## Image scan (Trivy, report-only)"
+echo "## Image scan (Trivy)"
 for report in "$@"; do
   image=$(jq -r '.ArtifactName' "$report")
   os=$(jq -r '.Metadata.OS | "\(.Family) \(.Name)"' "$report")

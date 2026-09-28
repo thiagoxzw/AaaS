@@ -32,6 +32,9 @@
         <spotbugs-annotations.version>4.10.4</spotbugs-annotations.version>
         <!-- Not managed by Spring Boot 4.1.1 -->
         <caffeine.version>3.3.0</caffeine.version>
+        <!-- Slice 9c (finding 9c-01): Spring Boot 4.1.1 manages 11.0.24, which Trivy reports with three critical
+             CVEs fixed in 11.0.25. Override through the BOM's own property; drop it once Boot manages 11.0.26+. -->
+        <tomcat.version>11.0.26</tomcat.version>
     </properties>
 
     <dependencyManagement>
