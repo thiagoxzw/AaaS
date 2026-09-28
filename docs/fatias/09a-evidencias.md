@@ -1,7 +1,7 @@
 # Fatia 9a — Evidências e segurança
 
-> Status: **em revisão**. Os testes e a documentação estão prontos; os achados 9a-01, 9a-02 e 9a-03 aguardam
-> decisão antes do fechamento. Plano: [07 — Plano do MVP](../07-plano-do-mvp.md), fatia 9.
+> Status: **implementada** (2026-09-28). Os cinco achados estão encerrados: 9a-01, 9a-02 e 9a-03 corrigidos por
+> decisão do autor, com testes que provam cada correção. Plano: [07 — Plano do MVP](../07-plano-do-mvp.md), fatia 9.
 
 ## Objetivo
 
@@ -18,16 +18,16 @@ de ser corrigido.
 
 | # | Achado | Muda o modelo de segurança? | Estado |
 |---|---|---|---|
-| 9a-01 | **Argumento mascarado × hash (reproduzido).** Um `reason` que cite algo parecido com segredo (`password: rejected`) chega mascarado ao aprovador e, depois de aprovado, vira `DENIED/ARGUMENTS_MISMATCH`, com zero restarts. Causa exata logo abaixo da tabela. | Não: falha fechado, e um argumento mascarado nunca é executado. Mas uma aprovação legítima é desperdiçada. | Aguardando decisão |
-| 9a-02 | **Valor de campo mapeado em mensagem do Jackson.** Com o `INCLUDE_SOURCE_IN_LOCATION` desligado, o trecho do corpo não aparece; mas quando um campo **mapeado** do `inspect` vem com tipo errado, a mensagem cita o valor desse campo, e ela vai para o log de aviso do adapter. O `Env` não é mapeado e não aparece. | Não: os campos mapeados (`Status`, `ExitCode`, `OOMKilled`, `StartedAt`, `FinishedAt`, `Health.Status`, `Image`, `RestartCount`) são gerados pelo próprio Docker. | Aguardando decisão |
-| 9a-03 | **As transições de `ToolExecution` não têm guarda na entidade.** `AgentExecution` e `Approval` recusam uma transição inválida (`IllegalStateException`); `ToolExecution` depende de quem a chama. Hoje todo chamador confere o estado sob o *lock* da linha (`claimApproved`, `closeWaiting`), roda só na subida (`recoverInterrupted`) ou é protegido pelo `@Version` (`cancelAwaitingApproval`). | Não: nenhum caminho inválido foi encontrado. É defesa em profundidade. | Aguardando decisão |
+| 9a-01 | **Argumento mascarado × hash (reproduzido).** Um `reason` que cite algo parecido com segredo (`password: rejected`) chega mascarado ao aprovador e, depois de aprovado, vira `DENIED/ARGUMENTS_MISMATCH`, com zero restarts. Causa exata logo abaixo da tabela. | Não: falha fechado, e um argumento mascarado nunca é executado. Mas uma aprovação legítima é desperdiçada. | **Corrigido:** recusado na proposta, antes de existir aprovação (ver "Correções") |
+| 9a-02 | **Valor de campo mapeado em mensagem do Jackson.** Com o `INCLUDE_SOURCE_IN_LOCATION` desligado, o trecho do corpo não aparece; mas quando um campo **mapeado** do `inspect` vem com tipo errado, a mensagem cita o valor desse campo, e ela vai para o log de aviso do adapter. O `Env` não é mapeado e não aparece. | Não: os campos mapeados (`Status`, `ExitCode`, `OOMKilled`, `StartedAt`, `FinishedAt`, `Health.Status`, `Image`, `RestartCount`) são gerados pelo próprio Docker. Mesmo assim, a fronteira do adapter não deve depender dessa premissa. | **Corrigido:** só tipos, caminho e posição vão para o log |
+| 9a-03 | **As transições de `ToolExecution` não têm guarda na entidade.** `AgentExecution` e `Approval` recusam uma transição inválida (`IllegalStateException`); `ToolExecution` depende de quem a chama. Hoje todo chamador confere o estado sob o *lock* da linha (`claimApproved`, `closeWaiting`), roda só na subida (`recoverInterrupted`) ou é protegido pelo `@Version` (`cancelAwaitingApproval`). | Não: nenhum caminho inválido foi encontrado. É defesa em profundidade. | **Corrigido:** guardas na própria entidade, tabela de 110 casos |
 | 9a-04 | **O threat model citava cerca de 30 testes que não existem**, com os nomes planejados no desenho. As proteções existiam sob outros nomes, exceto duas **provas** que faltavam: TM-B1-06 (o `500` não vaza detalhes) e TM-B1-08 (a matriz de autorização cobria só os 5 endpoints da fatia 1). | Não: todos os 21 handlers têm `@PreAuthorize` e a cadeia exige autenticação por padrão. | **Resolvido nesta etapa:** nomes corrigidos no documento 06; `AuthorizationMatrixIT.everyApiHandler_declaresExactlyThePermissionOfTheSpecification` e a asserção do `500` acrescentadas |
 | 9a-05 | **Um cancelamento que perde a corrida para a retomada recebe `409`** ("modificado concorrentemente, recarregue"), e o restart que já começou não é desfeito. | Não: é o `@Version` fazendo o seu trabalho; o cliente pode repetir o cancelamento. | Documentado |
 
 ### Causa exata do 9a-01
 
-Reproduzido em `RestartContainerIT.aReasonThatLooksLikeASecret_isMaskedForTheApprover_andTheApprovedCallFailsClosed`,
-com o roteiro `test-restart-masked-reason`:
+Reproduzido (antes da correção) com o roteiro `test-restart-masked-reason`, num teste que afirmava cada passo
+abaixo (commit `15224c6`):
 
 1. `PolicyEngine` vincula os argumentos **como propostos** e calcula o hash sobre a forma canônica deles
    (`decision.argumentsHash()`).
@@ -39,7 +39,7 @@ com o roteiro `test-restart-masked-reason`:
    **gravados** (mascarados) e compara o hash deles com o da aprovação. **Eles diferem**, e a chamada vira
    `DENIED/ARGUMENTS_MISMATCH` com a mensagem "The recorded arguments no longer match what was approved."
 
-O teste afirma cada um desses pontos: hashes da chamada e da aprovação iguais, argumentos gravados com
+Aquele teste afirmava cada um desses pontos: hashes da chamada e da aprovação iguais, argumentos gravados com
 `<redacted`, a mensagem da segunda verificação, zero restarts. O caso de controle é o mesmo fluxo com um
 `reason` sem nada parecido com segredo, que executa normalmente (`anApprovedRestart_restartsOnce_…`).
 
@@ -48,20 +48,13 @@ O teste afirma cada um desses pontos: hashes da chamada e da aprovação iguais,
 invisíveis (que viram `<U+200B>`). Hoje o único argumento livre de uma ferramenta que exige aprovação é o
 `reason` do `restartContainer`.
 
-### Opções para os achados em aberto
+### Correções (decisão do autor: corrigir os três, sem ampliar o escopo)
 
-**9a-01**
-- **(A) Aceitar e documentar:** continua falhando fechado na retomada.
-- **(B) Recusar já na proposta** *(recomendação)*: se o mascaramento mudar os argumentos de uma chamada que exige aprovação, a política nega com `INVALID_ARGUMENTS` e uma mensagem que o modelo pode seguir ("reescreva o motivo sem citar credenciais"). Nenhuma aprovação que não pode rodar é criada, e continua valendo "o que o humano vê é o que roda".
-- **(C) Fazer o hash sobre a cópia mascarada:** recusado, porque executaria argumentos mascarados.
-
-**9a-02**
-- **(A) Aceitar como residual.**
-- **(B) No adapter, registrar só o tipo da exceção e a posição, sem a mensagem nem a causa do Jackson** *(recomendação: uma mudança pequena, num lugar só)*.
-
-**9a-03**
-- **(A) Manter como está.**
-- **(B) Acrescentar guardas na entidade, como nas outras duas**, com uma tabela de transições testada como as da seção 1 *(recomendação)*.
+| Achado | O que mudou | Onde | Prova |
+|---|---|---|---|
+| 9a-01 | Quando a política exige aprovação, o executor confere se guardar os argumentos os alteraria (sanitização ou mascaramento). Se alteraria, a chamada vira `DENIED/INVALID_ARGUMENTS` **antes** de a aprovação existir, com uma mensagem que diz o que mudar sem repetir o valor. Para que o modelo consiga corrigir a proposta, o resultado de `INVALID_ARGUMENTS` passou a levar a mensagem ao modelo; essas mensagens são escritas pelo backend (campo e regra, nunca um valor). Os outros motivos de negação continuam levando só o motivo. | `OutputProcessor.altersArguments`, `ToolExecutor.execute` (ramo `REQUIRE_APPROVAL`), `PolicyDecision.denied`, `LlmRequestFactory` | `RestartContainerIT.aReasonThatWouldBeMasked_isRefusedBeforeAnyApproval_andTheModelLearnsWhy` (nenhuma aprovação, nenhuma chamada ao runtime, o modelo recebe `INVALID_ARGUMENTS` e "would be masked" sem `password` nem o valor); `OutputProcessorTest.altersArguments_isTrueExactlyWhenSanitizingOrMaskingChangesAValue` (segredos, `\r`, invisíveis e aninhados alteram; texto comum, `\n` e `\t` não); controle: `anApprovedRestart_restartsOnce_…` |
+| 9a-02 | Um erro inesperado na resposta do Docker registra só os tipos das exceções na cadeia, o caminho dos campos declarados (`State.Health`) e a linha e coluna. A mensagem do Jackson não é registrada, e a exceção não é mais encadeada como causa (quem chama registra as causas com as mensagens). O comportamento funcional é o mesmo: `UNEXPECTED`. | `DockerEngineContainerRuntime.describe` e o `catch` de `call` | `DockerEngineContainerRuntimeTest.anUnexpectedValueInAMappedField_isNeverLogged_onlyItsTypeAndPath`: o valor em `State`, `Config.Image`, `State.Health` e `State.ExitCode` não aparece nem no log nem em nenhuma mensagem da cadeia, e o log traz o tipo e o caminho. O mesmo caso falhava antes da correção |
+| 9a-03 | `ToolExecution` recusa, com `IllegalStateException`, toda transição fora da tabela da seção 1; `finish` só aceita `SUCCEEDED`, `FAILED`, `TIMED_OUT` e `OUTCOME_UNKNOWN`. Os chamadores continuam conferindo o estado sob o *lock*; a entidade deixou de depender disso. | `ToolExecution.require` e cada transição | `ToolExecutionTest.theTransitionTable` (11 estados × 10 transições = 110 casos), `anUnknownOutcome_acceptsNoTransitionAtAll`, `aRunningCall_endsOnlyInARunOutcome`, `theInvariants_holdAlongTheWay` (horários, tentativas e saída preservados numa repetição recusada) |
 
 ## 1. Máquinas de estado (extraídas do código)
 
@@ -92,9 +85,10 @@ A chamada nasce `PROPOSED` e, **na mesma transação**, sai para um dos estados 
 | `PROPOSED` | a política nega | `DENIED` | o primeiro passo da política que falhar dá o motivo | `AgentIT.s1_…`, `s2_…`, `s7_…`, `RestartContainerIT.anApprovalClaimedInsideTheArguments_…` |
 | `PROPOSED` | a política permite | `RUNNING` | vaga no executor; **gravado e commitado antes da chamada externa** | `ToolExecutorIT.executionIsCommittedAsRunning_beforeTheToolIsCalled` |
 | `PROPOSED` | a política permite, sem vaga no executor até o timeout | `FAILED` (`CAPACITY_EXCEEDED`) | a ferramenta não é chamada | `ToolExecutorCapacityTest.withoutAFreeSlot_theCallFailsAsCapacityExceeded_andTheToolNeverRuns` |
-| `PROPOSED` | a política exige aprovação | `WAITING_APPROVAL` | a aprovação `PENDING` nasce na mesma transação | `ToolExecutorIT.highRiskCall_waitsForApproval_andIsNotExecuted` |
+| `PROPOSED` | a política exige aprovação | `WAITING_APPROVAL` | os argumentos não mudariam ao ser guardados; a aprovação `PENDING` nasce na mesma transação | `ToolExecutorIT.highRiskCall_waitsForApproval_andIsNotExecuted` |
+| `PROPOSED` | a política exige aprovação, mas guardar os argumentos os alteraria | `DENIED` (`INVALID_ARGUMENTS`) | antes de criar a aprovação (9a-01) | `RestartContainerIT.aReasonThatWouldBeMasked_isRefusedBeforeAnyApproval_andTheModelLearnsWhy` |
 | `WAITING_APPROVAL` | aprovação `APPROVED` + retomada | `RUNNING` | *lock* da linha, ainda `WAITING_APPROVAL`, hash da aprovação = hash da chamada = hash dos argumentos gravados vinculados de novo, política permite **agora** | `ApprovalIT.anApprovedCall_runsExactlyAsRecorded_…` |
-| `WAITING_APPROVAL` | aprovação `APPROVED`, mas um hash difere | `DENIED` (`ARGUMENTS_MISMATCH`) | idem, falhando na comparação | `ApprovalIT.storedArgumentsChangedAfterTheProposal_…`, `aChangedCallHash_…`, `RestartContainerIT.aReasonThatLooksLikeASecret_…` |
+| `WAITING_APPROVAL` | aprovação `APPROVED`, mas um hash difere | `DENIED` (`ARGUMENTS_MISMATCH`) | idem, falhando na comparação | `ApprovalIT.storedArgumentsChangedAfterTheProposal_…`, `aChangedCallHash_…` |
 | `WAITING_APPROVAL` | aprovação `APPROVED`, mas a política nega agora | `DENIED` (motivo atual) | idem | `ApprovalIT.s11_…` |
 | `WAITING_APPROVAL` | aprovação `REJECTED` | `REJECTED` | na transação da decisão, sob o *lock* da chamada | `ApprovalIT.aRejectedCall_neverRuns_…` |
 | `WAITING_APPROVAL` | aprovação `EXPIRED` | `EXPIRED` | idem | `ApprovalIT.aLateDecision_findsTheApprovalExpired`, `theSweep_…` |
@@ -106,9 +100,9 @@ A chamada nasce `PROPOSED` e, **na mesma transação**, sai para um dos estados 
 | `RUNNING` | o backend sobe depois de uma queda | `OUTCOME_UNKNOWN` | recuperação na subida | `AgentRecoveryIT`, `RestartContainerIT.aCrashDuringTheVerification_…` |
 | qualquer terminal | recuperação, varredura, retomada | — (nada muda, nada roda) | as consultas filtram por `RUNNING` ou `WAITING_APPROVAL` | `RestartContainerIT.anUnknownOutcome_survivesRecoveryAndTheSweep_withoutASecondRestart` |
 
-**Não existe caminho para `RUNNING` que não passe pela política agora.** As guardas estão nos chamadores,
-não na entidade (achado 9a-03): por isso esta tabela é provada por testes de integração, e não por uma
-tabela unitária como as outras duas.
+**Não existe caminho para `RUNNING` que não passe pela política agora.** Desde a correção do 9a-03, a própria
+entidade recusa toda transição fora desta tabela (`ToolExecutionTest.theTransitionTable`, 110 casos), e os
+testes de integração citados provam os eventos e as condições.
 
 ### Aprovação (`Approval`)
 
@@ -158,14 +152,14 @@ As ameaças que sustentam a tese. A lista completa, com todos os testes por nome
 | TM-B4-04, TM-B2-01 O agente com mais poder que o usuário | A política usa as permissões **atuais** do solicitante | `PolicyEngine`, `UserReloadingJwtConverter` | `ToolExecutorIT.theAgentNeverHasMorePowerThanTheRequester`, `AgentIT.s4_…` | `DENIED/INSUFFICIENT_PERMISSION` |
 | TM-B4-05, TM-B5-01 "O usuário aprovou" no texto do modelo, nos argumentos ou nos logs | Aprovação é entidade; só `POST /approvals/{id}/decision` com `APPROVAL_DECIDE` decide | `ApprovalWorkflow.decide` | `AgentIT.aRiskyProposal_waitsForApproval_whateverTheModelClaims`, `ApprovalIT.s6_…`, `RestartContainerIT.anInjectionInTheLogs_authorizesNothing_andStaysLabelledAsUntrusted` | Continua `WAITING_APPROVAL`/`PENDING` depois de 2 varreduras e 2 recuperações; zero restarts |
 | TM-B7-01 Aprovador sem permissão | Permissões recarregadas a cada requisição | `UserReloadingJwtConverter` | `ApprovalIT.onlyAUserHoldingApprovalDecideNow_canDecide` | Operador `403`, aprovador rebaixado `403`, outra organização `404` |
-| TM-B7-02 TOCTOU | Hash em 3 pontos e argumentos gravados vinculados de novo | `ToolExecutionJournal.claimApproved` | `ApprovalIT.storedArgumentsChangedAfterTheProposal_…`, `aChangedCallHash_…`, `RestartContainerIT.aReasonThatLooksLikeASecret_…` | `DENIED/ARGUMENTS_MISMATCH`, zero restarts |
+| TM-B7-02 TOCTOU | Hash em 3 pontos e argumentos gravados vinculados de novo; argumentos que o mascaramento alteraria são recusados antes da aprovação | `ToolExecutionJournal.claimApproved`, `ToolExecutor.execute` | `ApprovalIT.storedArgumentsChangedAfterTheProposal_…`, `aChangedCallHash_…`, `RestartContainerIT.aReasonThatWouldBeMasked_…` | `DENIED/ARGUMENTS_MISMATCH` na retomada, ou `INVALID_ARGUMENTS` sem aprovação; zero restarts |
 | TM-B7-03 Replay e concorrência | *Lock* da aprovação, transições condicionais, `@Version` | `ApprovalWorkflow`, `ExecutionJournal.resume`, `claimApproved` | `ApprovalIT.s10_…`, `approvingAndCancellingAtTheSameTime_…`, `approvingAtTheMomentItExpires_…` | 8 decisões + 4 retomadas em paralelo → **1** restart. Cada corrida roda 6 rodadas; numa execução medida, os dois desfechos apareceram nas duas (cancelamento: cancelada 1×, aprovada 5×; expiração: aprovada 2×, expirada 4×), e o invariante valeu em todas |
 | TM-B7-04 Contexto mudou depois da aprovação | Política reavaliada na retomada | `PolicyEngine.evaluateApproved` | `ApprovalIT.s11_…` | Aprovação `APPROVED`, chamada `DENIED/NOT_ALLOWED_BY_AUTONOMY` |
 | TM-B7-06 Justificativa do agente induz a aprovação | `system` × `agentClaims`, texto puro, `trusted: false` | `ApprovalView` | `ApprovalIT.anApprovedCall_…`, `RestartContainerIT.anInjectionInTheLogs_…` | O texto injetado aparece só em `agentClaims`, nunca em `system` |
 | TM-B7-07 O aprovador nega ter aprovado | Decisão e auditoria na mesma transação | `ApprovalWorkflow.decide` | `ApprovalIT.theDecisionAndItsAuditEvent_areAtomic` | Auditoria falha → aprovação continua `PENDING` |
 | TM-B1-08 Endpoint esquecido | `@PreAuthorize` em todo handler; `anyRequest().authenticated()` | controllers, `SecurityConfiguration` | `AuthorizationMatrixIT.everyApiHandler_declaresExactlyThePermissionOfTheSpecification` | Os 21 handlers de `/api/v1`, lidos do Spring MVC, iguais à tabela; um endpoint novo sem entrada falha o teste |
 | TM-B1-06 Erro vaza detalhes | Respostas de erro escritas pela aplicação | `GlobalExceptionHandler` | `ApprovalIT.theDecisionAndItsAuditEvent_areAtomic` | O `500` não traz a mensagem do banco, o SQL nem a pilha |
-| TM-B3-01, TM-B5-03/04 Segredos | Adapter sem `Env`, mascaramento antes de gravar ou enviar | `DockerInspect`, `SecretRedactor`, `OutputProcessor` | `SecretCanaryIT`, `RealDockerIT.s9_…`, `DockerEngineContainerRuntimeTest.anUnparsableInspect_…` | Nenhum canário no log, no HTTP, no banco nem no LLM (seção 6) |
+| TM-B3-01, TM-B5-03/04 Segredos | Adapter sem `Env`, mascaramento antes de gravar ou enviar | `DockerInspect`, `SecretRedactor`, `OutputProcessor` | `SecretCanaryIT`, `RealDockerIT.s9_…`, `DockerEngineContainerRuntimeTest.anUnparsableInspect_…`, `anUnexpectedValueInAMappedField_…` | Nenhum canário no log, no HTTP, no banco nem no LLM (seção 7) |
 | TM-B6-01/03 Operações proibidas no Docker | Proxy com `POST=0` e lista permitida no CI | `docker-compose.yml`, `check-compose-docker-socket.sh` | `RealDockerIT.theProxyRefusesEverythingBeyondReadingContainersAndLogsAndRestarting` | `start`, `create`, `exec`, `DELETE` → `403` no proxy real |
 | Efeito colateral incerto | `retryable(false)`; `OUTCOME_UNKNOWN` é terminal | `ToolExecutor`, `RestartContainerTool` | `RestartContainerIT.theConnectionDroppingAfterTheRequest_…`, `anUnknownOutcome_survivesRecoveryAndTheSweep_withoutASecondRestart` | **1** pedido de restart, mesmo depois de recuperação e varredura |
 
@@ -243,17 +237,17 @@ prova o lado do backend: nenhum texto autoriza nada. Se um modelo real resiste �
 |---|---|---|
 | Fluxo inteiro: login, diagnóstico, aprovação, um restart que dá certo e outro com `OUTCOME_UNKNOWN`, explicação, auditoria | `SecretCanaryIT`: chave do JWT, senha do bootstrap, senha e token dos usuários, uma senha errada de login e dois segredos nos logs do container como canários. Confere os eventos de log da aplicação (mensagem, MDC e pilha, lidos por um *appender* do logback, com a asserção de que o aviso do `OUTCOME_UNKNOWN` e a sua pilha estão lá), todas as respostas HTTP (as do login só contra senhas e chave, porque elas devolvem um token por definição), as linhas gravadas pelo fluxo e as requisições ao LLM | Nenhum canário em lugar nenhum; os segredos dos logs chegam mascarados (`<redacted…>`) ao banco e ao LLM |
 | Erros do provedor de LLM | `OpenAiLlmAdapterTest.theApiKey_neverAppearsInLogsOrErrors` (fatia 6) | Nem a chave nem o corpo do erro (que ecoa o prompt) aparecem |
-| Erros do Docker | `DockerEngineContainerRuntimeTest.httpErrors_becomeCategories_withoutDockerMessages` (fatia 3) e `anUnparsableInspect_neverLogsNorThrowsTheContainersEnvironment` (9a) | O corpo e o `Env` não aparecem; achado 9a-02 para campos mapeados |
+| Erros do Docker | `DockerEngineContainerRuntimeTest.httpErrors_becomeCategories_withoutDockerMessages` (fatia 3) e `anUnparsableInspect_neverLogsNorThrowsTheContainersEnvironment` e `anUnexpectedValueInAMappedField_isNeverLogged_onlyItsTypeAndPath` (9a) | O corpo, o `Env` e o valor de um campo mapeado não aparecem; o log traz só tipos, caminho e posição (9a-02 corrigido) |
 | Respostas HTTP de erro | `ApprovalIT.theDecisionAndItsAuditEvent_areAtomic` | O `500` não traz o erro do banco, o SQL nem a pilha |
-| Logs técnicos | Revisão de todos os `log.*` do código | Só IDs, contagens, nomes de ferramenta e de operação. As exceções vão com a pilha; o risco disso é o achado 9a-02. Um erro inesperado de integridade do banco pode trazer valores da linha na pilha (já mascarados antes de gravar) |
+| Logs técnicos | Revisão de todos os `log.*` do código | Só IDs, contagens, nomes de ferramenta e de operação. As exceções vão com a pilha; a do adapter do Docker deixou de levar a mensagem do Jackson (9a-02). Um erro inesperado de integridade do banco pode trazer valores da linha na pilha (já mascarados antes de gravar) |
 | Configuração | `JwtPropertiesTest.toString_neverContainsTheSecret`, `OpenAiLlmAdapterTest` (`OpenAiProperties.toString`) | Os segredos não aparecem no `toString` |
 | Repositório | Gitleaks no CI | Sem vazamentos |
 
 ## 8. Testes
 
-`./mvnw verify`: **401 testes** (240 unitários e 159 de integração no backend, e 2 no `demo-api`), 0 falhas,
-SpotBugs sem achados. Os 159 de integração também passaram em ordem alfabética reversa. Na fatia 8 eram 329;
-os 72 novos são quase todos casos das duas tabelas de transição.
+`./mvnw verify`: **516 testes** (355 unitários e 159 de integração no backend, e 2 no `demo-api`), 0 falhas,
+SpotBugs sem achados, gitleaks sem vazamentos. Os 159 de integração também passaram em ordem alfabética reversa.
+Na fatia 8 eram 329; dos 187 novos, 170 são casos das três tabelas de transição.
 
 | Teste novo | O que prova |
 |---|---|
@@ -261,10 +255,12 @@ os 72 novos são quase todos casos das duas tabelas de transição.
 | `ApprovalTest.theTransitionTable` (20 casos) | Só `PENDING` muda |
 | `AuthorizationMatrixIT.everyApiHandler_declaresExactlyThePermissionOfTheSpecification` | Os 21 handlers reais = a especificação (TM-B1-08) |
 | `ApprovalIT.approvingAndCancellingAtTheSameTime_…`, `approvingAtTheMomentItExpires_…` | As duas corridas que faltavam (TM-B7-03) |
-| `RestartContainerIT` (+6): `aReasonThatLooksLikeASecret_…`, `anUnknownOutcome_survivesRecoveryAndTheSweep_…`, `aCrashDuringTheVerification_…`, `anApprovedCallNotYetTakenWhenTheBackendDies_…`, `anInjectionInTheLogs_…`, `anApprovalClaimedInsideTheArguments_…` | Achado 9a-01, idempotência, casos F e de recuperação, injeção nos logs e nos argumentos |
+| `RestartContainerIT` (+6): `aReasonThatWouldBeMasked_…`, `anUnknownOutcome_survivesRecoveryAndTheSweep_…`, `aCrashDuringTheVerification_…`, `anApprovedCallNotYetTakenWhenTheBackendDies_…`, `anInjectionInTheLogs_…`, `anApprovalClaimedInsideTheArguments_…` | Achado 9a-01, idempotência, casos F e de recuperação, injeção nos logs e nos argumentos |
 | `SecretCanaryIT` | Nenhum segredo sai pelo log, HTTP, banco ou LLM |
 | `ToolExecutorCapacityTest` | A única transição de `ToolExecution` que nenhum teste alcançava: `PROPOSED → FAILED (CAPACITY_EXCEEDED)`, sem chamar a ferramenta |
-| `DockerEngineContainerRuntimeTest.anUnparsableInspect_…` | O `Env` não aparece nem num `inspect` quebrado (achado 9a-02) |
+| `DockerEngineContainerRuntimeTest.anUnparsableInspect_…`, `anUnexpectedValueInAMappedField_…` | O `Env` não aparece nem num `inspect` quebrado; o valor de um campo mapeado também não (9a-02) |
+| `ToolExecutionTest` (113 casos) | A tabela de transições da chamada, `OUTCOME_UNKNOWN` terminal e as invariantes (9a-03) |
+| `OutputProcessorTest.altersArguments_…` | Quais argumentos o mascaramento alteraria (9a-01) |
 | Asserção nova em `ApprovalIT.theDecisionAndItsAuditEvent_areAtomic` | O `500` não vaza detalhes (TM-B1-06) |
 
 ### Achados sobre os próprios testes

@@ -17,6 +17,7 @@
 | [6.1](docs/fatias/06-1-dados-atuais.md) | Dados atuais para o diagnóstico: logs só da execução atual por padrão e `health` só com o container rodando, a partir da primeira medição de H2 |
 | [7](docs/fatias/07-aprovacao.md) | Aprovação humana: ações de risco param em `WAITING_APPROVAL`, uma pessoa com `APPROVAL_DECIDE` aprova ou rejeita pela API, e a execução retoma com a chamada **exata** que foi aprovada, depois de reavaliar a política |
 | [8](docs/fatias/08-restart.md) | `restartContainer` de ponta a ponta: diagnóstico → proposta → aprovação → restart → verificação determinística → auditoria, e `GET /tool-executions/{id}` para responder quem pediu, quem aprovou, quando, por quê e com que resultado |
+| [9a](docs/fatias/09a-evidencias.md) | Fechamento, parte 1: as máquinas de estado e as ameaças ligadas a testes que existem, com as evidências observáveis; três achados de segurança corrigidos |
 
 A fatia 9 fecha o MVP. O README completo (exemplos, screenshots, API) será escrito nela.
 

@@ -199,36 +199,28 @@ class RestartContainerIT extends AgentTestSupport {
     }
 
     /**
-     * Slice 9a. The hash covers the arguments as proposed; what is stored (and bound again on resumption) is
-     * the masked copy. A reason quoting something secret-like ("password: …") therefore never runs masked:
-     * the approved call fails closed with ARGUMENTS_MISMATCH, and the restart is not sent.
+     * Slice 9a, finding 9a-01 (closed). The hash covers the arguments as proposed, but the stored copy is
+     * sanitized and masked, so a reason quoting something secret-like ("password: …") could never match the
+     * approved hash again. Such a proposal is now refused BEFORE any approval exists, as INVALID_ARGUMENTS, and
+     * the model learns what to change without the value being repeated. The control case, a reason without
+     * anything secret-like, is anApprovedRestart_restartsOnce_isVerified_andCanBeExplained.
      */
     @Test
-    void aReasonThatLooksLikeASecret_isMaskedForTheApprover_andTheApprovedCallFailsClosed() {
-        JsonNode waiting = ask(operator, conversation(operator, environment),
-                "[RESTART-MASKED] " + uniqueName("q"));
-        JsonNode approval = approvalOf(waiting);
-        assertThat(approval.get("agentClaims").get("justification").asString())
-                .contains("<redacted").doesNotContain("rejected'");
-        assertThat(approval.get("action").get("arguments").get("reason").asString()).contains("<redacted");
+    void aReasonThatWouldBeMasked_isRefusedBeforeAnyApproval_andTheModelLearnsWhy() {
+        String question = "[RESTART-MASKED] " + uniqueName("q");
+        JsonNode finished = finished(operator, ask(operator, conversation(operator, environment), question)
+                .get("executionId").asString());
 
-        decide(approver, approval.get("approvalId").asString(), "APPROVE", null);
-
-        JsonNode restart = actions(finished(operator, waiting.get("executionId").asString())).getLast();
+        JsonNode restart = actions(finished).getLast();
         assertThat(toolAndStatus(restart)).isEqualTo("restartContainer:DENIED");
-        assertThat(restart.get("denialReason").asString()).isEqualTo("ARGUMENTS_MISMATCH");
-        assertThat(restarts()).isZero();
-        // The exact cause. The call's hash column still equals the approval's copy (the first of the three
-        // checks passes); what fails is binding the STORED, masked arguments again: their hash differs from
-        // the hash of the arguments as proposed. The control case, a reason without anything secret-like, is
-        // anApprovedRestart_restartsOnce_isVerified_andCanBeExplained.
-        Map<String, Object> call = jdbc.queryForMap("SELECT t.arguments_hash AS call_hash, a.arguments_hash AS "
-                + "approved_hash, t.arguments::text AS stored, t.error_message FROM tool_execution t "
-                + "JOIN approval a ON a.tool_execution_id = t.id WHERE t.id = ?::uuid",
-                restart.get("toolExecutionId").asString());
-        assertThat(call.get("call_hash")).isEqualTo(call.get("approved_hash"));
-        assertThat((String) call.get("stored")).contains("<redacted").doesNotContain("rejected'");
-        assertThat(call.get("error_message")).isEqualTo("The recorded arguments no longer match what was approved.");
+        assertThat(restart.get("denialReason").asString()).isEqualTo("INVALID_ARGUMENTS");
+        assertThat(finished.get("approvals").isEmpty()).isTrue();
+        assertThat(count("SELECT count(*) FROM approval WHERE agent_execution_id = ?::uuid",
+                finished.get("executionId").asString())).isZero();
+        assertThat(runtime.callsFor(container)).isZero();
+        String told = toolResults(question).getLast();
+        assertThat(told).contains("\"status\":\"DENIED\"").contains("\"reason\":\"INVALID_ARGUMENTS\"")
+                .contains("would be masked").doesNotContain("rejected'").doesNotContain("password");
     }
 
     /**

@@ -218,10 +218,9 @@ class DockerEngineContainerRuntimeTest {
     }
 
     /**
-     * Slice 9a: an inspect body the adapter cannot parse is logged as a warning with its exception. The
-     * container's environment is not mapped, so even right next to the parse error neither the log nor any
-     * message in the exception chain carries it (Jackson's INCLUDE_SOURCE_IN_LOCATION is off). Finding 9a-02
-     * (docs/fatias/09a-evidencias.md): the value of a *mapped* field with the wrong type is quoted.
+     * Slice 9a: an inspect body the adapter cannot parse is logged as a warning. The container's environment is
+     * not mapped, so even right next to the parse error neither the log nor any message in the exception chain
+     * carries it (Jackson's INCLUDE_SOURCE_IN_LOCATION is off).
      */
     @Test
     void anUnparsableInspect_neverLogsNorThrowsTheContainersEnvironment(CapturedOutput output) {
@@ -230,12 +229,35 @@ class DockerEngineContainerRuntimeTest {
                 "{\"Config\":{\"Env\":[\"DB_PASSWORD=" + secret + "\"],\"Image\":\"x\"},\"State\":{\"Status\": oops",
                 "{\"Config\":{\"Env\":[\"DB_PASSWORD=" + secret + "\"],\"Image\":\"x\"},\"State\":\"broken\"}",
                 "{\"Config\":{\"Env\":\"DB_PASSWORD=" + secret + "\",\"Image\":[1]},\"RestartCount\":\"x\"}")) {
-            stub.json("GET", API + "/containers/devops-demo-api-1/json", 200, body);
-            Throwable thrown = catchThrowable(() -> runtime.inspect(demoApi));
-            assertThat(thrown).isInstanceOf(ContainerRuntimeException.class);
-            for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
-                assertThat(String.valueOf(cause.getMessage())).doesNotContain(secret);
-            }
+            assertNothingLeaks(body, secret, output);
+        }
+    }
+
+    /**
+     * Slice 9a, finding 9a-02 (closed): unexpected external data never goes into a log. A value in a MAPPED field
+     * with the wrong type used to be quoted by Jackson's message, which reached the warning log and the exception
+     * chain. Now only the exception types, the field path and the position are kept.
+     */
+    @Test
+    void anUnexpectedValueInAMappedField_isNeverLogged_onlyItsTypeAndPath(CapturedOutput output) {
+        String secret = "canary-value-in-a-mapped-field";
+        assertNothingLeaks("{\"State\":\"" + secret + "\",\"Config\":{\"Image\":\"x\"}}", secret, output);
+        assertNothingLeaks("{\"Config\":{\"Image\":[\"" + secret + "\"]}}", secret, output);
+        assertNothingLeaks("{\"State\":{\"Health\":\"" + secret + "\"}}", secret, output);
+        assertNothingLeaks("{\"State\":{\"ExitCode\":\"" + secret + "\"}}", secret, output);
+
+        assertThat(output.getAll()).contains("Unexpected Docker API response for operation inspect")
+                .contains("at 'State'").contains("at 'Config.Image'").contains("at 'State.Health'")
+                .contains("at 'State.ExitCode'").contains("line 1, column");
+    }
+
+    private void assertNothingLeaks(String body, String secret, CapturedOutput output) {
+        stub.json("GET", API + "/containers/devops-demo-api-1/json", 200, body);
+        Throwable thrown = catchThrowable(() -> runtime.inspect(demoApi));
+        assertThat(thrown).isInstanceOf(ContainerRuntimeException.class);
+        assertThat(((ContainerRuntimeException) thrown).category()).isEqualTo(Category.UNEXPECTED);
+        for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
+            assertThat(String.valueOf(cause.getMessage())).doesNotContain(secret);
         }
         assertThat(output.getAll()).contains("Unexpected Docker API response").doesNotContain(secret);
     }

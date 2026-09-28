@@ -27,7 +27,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.StringJoiner;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -39,6 +41,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.TokenStreamLocation;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -64,6 +67,7 @@ public class DockerEngineContainerRuntime implements ContainerRuntime {
     /** Longest graceful stop a restart may ask for; the restart's read timeout is this plus the margin. */
     static final Duration MAX_GRACEFUL_STOP = Duration.ofSeconds(30);
     static final Duration RESTART_MARGIN = Duration.ofSeconds(30);
+    private static final int MAX_CAUSES = 10;
 
     private final RuntimeConnectionProperties.Docker settings;
     private final Map<String, RestClient> clients = new LinkedHashMap<>();
@@ -219,7 +223,8 @@ public class DockerEngineContainerRuntime implements ContainerRuntime {
     }
 
     @SuppressFBWarnings(value = "CRLF_INJECTION_LOGS", justification = "operation is one of this class's own "
-            + "literals (inspect, logs, restart, version); logs are JSON-encoded as well")
+            + "literals (inspect, logs, restart, version); describe() yields class names, declared field names and "
+            + "numbers, never received data; logs are JSON-encoded as well")
     private <T> T call(String operation, String connectionRef, Map<String, RestClient> pool,
             Function<RestClient, T> request) {
         RestClient client = pool.get(connectionRef);
@@ -241,11 +246,43 @@ public class DockerEngineContainerRuntime implements ContainerRuntime {
                     exception);
         } catch (RestClientException | JacksonException exception) {
             outcome = Category.UNEXPECTED.name();
-            log.warn("Unexpected Docker API response for operation {}", operation, exception);
-            throw new ContainerRuntimeException(Category.UNEXPECTED, "Unexpected Docker API response", exception);
+            // Slice 9a (finding 9a-02): unexpected external data never goes into a log. Jackson's messages quote
+            // the offending value, so only the exception types, the field path and the position are kept, and
+            // the exception is not chained as a cause (callers log causes with their messages).
+            String described = describe(exception);
+            log.warn("Unexpected Docker API response for operation {}: {}", operation, described);
+            throw new ContainerRuntimeException(Category.UNEXPECTED, "Unexpected Docker API response (" + described
+                    + ")");
         } finally {
             sample.stop(meters.timer("devops.runtime.calls", "operation", operation, "outcome", outcome));
         }
+    }
+
+    /**
+     * What went wrong, without any of the received data: the exception types down the cause chain and, for a
+     * Jackson error, the path of declared fields (e.g. {@code State.Health}) and the line and column. Messages
+     * are left out on purpose: Jackson's quote the value it could not read.
+     */
+    static String describe(Throwable exception) {
+        StringJoiner types = new StringJoiner(" <- ");
+        JacksonException jackson = null;
+        int depth = 0;
+        for (Throwable cause = exception; cause != null && depth < MAX_CAUSES; cause = cause.getCause(), depth++) {
+            types.add(cause.getClass().getSimpleName());
+            if (jackson == null && cause instanceof JacksonException found) {
+                jackson = found;
+            }
+        }
+        if (jackson == null) {
+            return types.toString();
+        }
+        String path = jackson.getPath().stream()
+                .map(reference -> reference.getPropertyName() != null ? reference.getPropertyName()
+                        : "[" + reference.getIndex() + "]")
+                .collect(Collectors.joining("."));
+        TokenStreamLocation location = jackson.getLocation();
+        return types + " at '" + path + "'" + (location == null ? ""
+                : " (line " + location.getLineNr() + ", column " + location.getColumnNr() + ")");
     }
 
     // ---- mapping ----------------------------------------------------------------------------------------

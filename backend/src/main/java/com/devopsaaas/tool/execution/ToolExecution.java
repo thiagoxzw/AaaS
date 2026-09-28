@@ -15,6 +15,9 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -81,6 +84,10 @@ public class ToolExecution {
     @Version
     private Long version;
 
+    /** How a RUNNING call can end; every other status is reached from PROPOSED or WAITING_APPROVAL. */
+    private static final Set<ToolExecutionStatus> RUN_OUTCOMES = EnumSet.of(ToolExecutionStatus.SUCCEEDED,
+            ToolExecutionStatus.FAILED, ToolExecutionStatus.TIMED_OUT, ToolExecutionStatus.OUTCOME_UNKNOWN);
+
     protected ToolExecution() {
     }
 
@@ -108,7 +115,9 @@ public class ToolExecution {
         return execution;
     }
 
+    /** PROPOSED (the policy said no) or WAITING_APPROVAL (a hash or the policy of now said no) → DENIED. */
     void deny(DenialReason reason, String detail) {
+        require(ToolExecutionStatus.PROPOSED, ToolExecutionStatus.WAITING_APPROVAL);
         policyDecision = PolicyOutcome.DENY;
         denialReason = reason;
         errorMessage = detail;
@@ -118,6 +127,7 @@ public class ToolExecution {
     }
 
     void awaitApproval() {
+        require(ToolExecutionStatus.PROPOSED);
         policyDecision = PolicyOutcome.REQUIRE_APPROVAL;
         status = ToolExecutionStatus.WAITING_APPROVAL;
         updatedAt = Timestamps.now();
@@ -125,6 +135,7 @@ public class ToolExecution {
 
     /** Allowed by the policy but never started, because no execution slot freed up in time. */
     void rejectForCapacity(String message) {
+        require(ToolExecutionStatus.PROPOSED);
         policyDecision = PolicyOutcome.ALLOW;
         status = ToolExecutionStatus.FAILED;
         errorCode = ToolErrorCode.CAPACITY_EXCEEDED;
@@ -135,6 +146,7 @@ public class ToolExecution {
 
     /** Recorded and committed BEFORE the external call, so an interrupted call leaves evidence behind. */
     void start() {
+        require(ToolExecutionStatus.PROPOSED);
         policyDecision = PolicyOutcome.ALLOW;
         status = ToolExecutionStatus.RUNNING;
         startedAt = Timestamps.now();
@@ -143,6 +155,10 @@ public class ToolExecution {
 
     void finish(ToolExecutionStatus finalStatus, int attempts, String outputJson, boolean truncated,
             int outputRedactions, ToolErrorCode code, String message) {
+        require(ToolExecutionStatus.RUNNING);
+        if (!RUN_OUTCOMES.contains(finalStatus)) {
+            throw new IllegalArgumentException(finalStatus + " is not how a running call ends");
+        }
         status = finalStatus;
         attemptCount = attempts;
         output = outputJson;
@@ -162,6 +178,7 @@ public class ToolExecution {
 
     /** Slice 7: a human approved the call and the policy allows it NOW; recorded before the external call. */
     void startApproved() {
+        require(ToolExecutionStatus.WAITING_APPROVAL);
         status = ToolExecutionStatus.RUNNING;
         startedAt = Timestamps.now();
         updatedAt = startedAt;
@@ -169,6 +186,7 @@ public class ToolExecution {
 
     /** A human rejected the call: it never runs. */
     void reject() {
+        require(ToolExecutionStatus.WAITING_APPROVAL);
         status = ToolExecutionStatus.REJECTED;
         finishedAt = Timestamps.now();
         updatedAt = finishedAt;
@@ -176,6 +194,7 @@ public class ToolExecution {
 
     /** Nobody decided in time: the call never runs. */
     void expire() {
+        require(ToolExecutionStatus.WAITING_APPROVAL);
         status = ToolExecutionStatus.EXPIRED;
         finishedAt = Timestamps.now();
         updatedAt = finishedAt;
@@ -183,9 +202,24 @@ public class ToolExecution {
 
     /** A call waiting for approval whose execution was cancelled never runs. */
     void cancelWhileWaiting() {
+        require(ToolExecutionStatus.WAITING_APPROVAL);
         status = ToolExecutionStatus.CANCELLED;
         finishedAt = Timestamps.now();
         updatedAt = finishedAt;
+    }
+
+    /**
+     * Slice 9a (finding 9a-03): the entity guards its own state machine, as AgentExecution and Approval do;
+     * callers still check under the row lock, but no longer have to be the only line of defense.
+     */
+    private void require(ToolExecutionStatus... expected) {
+        for (ToolExecutionStatus candidate : expected) {
+            if (status == candidate) {
+                return;
+            }
+        }
+        throw new IllegalStateException("Tool execution " + id + " is " + status + ", expected one of "
+                + Arrays.toString(expected));
     }
 
     public UUID getId() {

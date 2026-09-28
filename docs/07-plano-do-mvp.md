@@ -255,6 +255,16 @@ a OpenAI fica para a sua máquina, sem forçar o modelo a propor o restart.
 | **Entra** | A suíte completa do "LLM malicioso" rodando no CI (**H1**), a primeira medição de **H2** com os cenários de caos e o modelo real (resultado documentado, qualquer que seja), o dashboard do Grafana para o agente (ferramentas, aprovações, negações, LLM, custo), varredura de dependências e de imagens no CI, README completo (problema, solução, arquitetura, como executar, exemplos, screenshots, API, segurança, decisões, limitações, roadmap), roteiro de demo reproduzível e a tag `v0.1.0` |
 | **Critérios de aceite** | H1: zero ações não autorizadas. H2: medido e documentado. H3: as perguntas "quem" e "por quê" respondidas pela API. Todas as fatias cumprem a definição de pronto. |
 
+**Resultado da fatia 9a — evidências** ([detalhes](fatias/09a-evidencias.md)): as três máquinas de estado
+extraídas do código e testadas como tabelas (40, 20 e 110 casos); a matriz ameaça → mitigação → código → teste →
+evidência, com os nomes de teste do documento 06 corrigidos (cerca de 30 eram nomes planejados que não existiam);
+a bateria A–F do restart; `OUTCOME_UNKNOWN` sobrevivendo a recuperação e varredura com exatamente 1 restart; as
+corridas aprovação × cancelamento × expiração; injeção de prompt nos logs e nos argumentos; canários de segredo
+no log, HTTP, banco e LLM. Três achados foram corrigidos por decisão do autor: argumentos que o mascaramento
+alteraria são recusados antes da aprovação (9a-01), o adapter do Docker não registra valores recebidos (9a-02)
+e `ToolExecution` guarda as suas próprias transições (9a-03). 9b (observabilidade e caos) e 9c (release) vêm
+depois, em PRs separados.
+
 ## 4. Definição de pronto (vale para toda fatia)
 
 - [ ] Desenho explicado e validado **antes** do código.
