@@ -175,13 +175,13 @@ alegação do agente, e o nível `OBSERVE_ONLY` existe para ambientes em que nem
 
 | ID | STRIDE | Ameaça | Mitigação | Ref | Teste |
 |---|---|---|---|---|---|
-| TM-B7-01 | E | Um usuário sem `APPROVAL_DECIDE` aprova | A permissão é verificada com o estado **atual** do usuário | RF-42, RNF-SEG-13 | `approval_rejectedWithout_approvalDecidePermission` |
-| TM-B7-02 | T | **TOCTOU:** o humano aprova parâmetros X, e o sistema executa Y | Os argumentos são armazenados. O `arguments_hash` fica vinculado à aprovação e é recomparado antes da execução. O LLM não é consultado de novo. | RNF-SEG-06, ADR-006 | `approvedExecution_usesStoredArguments`, `execution_refused_whenArgumentsHashMismatch` |
-| TM-B7-03 | T | Replay: reutilizar uma aprovação, ou clique duplo | Uso único via transição condicional `PENDING → APPROVED`, e a retomada também é uma transição condicional | RF-27, D03 §9 | `approval_cannotBeUsedTwice`, `concurrentApprovals_restartOnlyOnce` |
-| TM-B7-04 | T | Uma aprovação antiga é usada num contexto que mudou | Expiração em 15 min. A **política é reavaliada** no momento de executar (uma autonomia reduzida nega a ação). | RF-43, D04 §4.7 | `approvedAction_denied_whenAutonomyLoweredMeanwhile` |
+| TM-B7-01 | E | Um usuário sem `APPROVAL_DECIDE` aprova | A permissão é verificada com o estado **atual** do usuário | RF-42, RNF-SEG-13 | `ApprovalIT.onlyAUserHoldingApprovalDecideNow_canDecide` (operador, aprovador rebaixado depois do login, outra organização) |
+| TM-B7-02 | T | **TOCTOU:** o humano aprova parâmetros X, e o sistema executa Y | Os argumentos são armazenados. O `arguments_hash` fica vinculado à aprovação e é recomparado antes da execução, em três pontos: a cópia da aprovação, o hash da chamada e o hash dos argumentos gravados, vinculados de novo. O LLM não é consultado de novo. | RNF-SEG-06, ADR-006 | `ApprovalIT.anApprovedCall_runsExactlyAsRecorded_andTheExecutionResumes`, `…storedArgumentsChangedAfterTheProposal_areDenied_withArgumentsMismatch`, `…aChangedCallHash_isDenied_withArgumentsMismatch` |
+| TM-B7-03 | T | Replay: reutilizar uma aprovação, ou clique duplo | Uso único: a decisão acontece sob o *lock* da linha da aprovação e só sai de `PENDING`; a retomada é uma transição condicional da execução e de cada chamada | RF-27, D03 §9 | `ApprovalIT.anApproval_cannotBeDecidedTwice`, `…s10_concurrentDecisionsAndResumptions_restartExactlyOnce` |
+| TM-B7-04 | T | Uma aprovação antiga é usada num contexto que mudou | Expiração em 15 min. A **política é reavaliada** no momento de executar (uma autonomia reduzida nega a ação). | RF-43, D04 §4.7 | `ApprovalIT.s11_…`, `…aLateDecision_findsTheApprovalExpired`, `…theSweep_expiresWhatIsDue_once_andResumesTheExecution` |
 | TM-B7-05 | E | Autoaprovação | **Aceita no MVP** (um único usuário). V5: exigir aprovador ≠ solicitante ("quatro olhos"), configurável por `tier` (PROD). | ADR-006 | (V5) |
-| TM-B7-06 | S | Engenharia social: a justificativa do agente induz a aprovação | Separação `system` × `agentClaims`, evidências determinísticas e impacto vindo da definição da ferramenta | D05 §13 | `approvalView_separatesSystemFromAgentClaims` |
-| TM-B7-07 | R | O aprovador nega ter aprovado | Auditoria com usuário, horário, comentário e hash dos argumentos, na mesma transação da decisão | RF-44 | `approvalDecision_andAuditEvent_areAtomic` |
+| TM-B7-06 | S | Engenharia social: a justificativa do agente induz a aprovação | Separação `system` × `agentClaims`, evidências determinísticas e impacto vindo da definição da ferramenta | D05 §13 | `ApprovalIT.anApprovedCall_runsExactlyAsRecorded_andTheExecutionResumes` (a justificativa com HTML volta como texto puro, só em `agentClaims`) |
+| TM-B7-07 | R | O aprovador nega ter aprovado | Auditoria com usuário, horário e hash dos argumentos, na mesma transação da decisão. O comentário fica na aprovação, não no evento, porque é texto do usuário | RF-44 | `ApprovalIT.theDecisionAndItsAuditEvent_areAtomic` (um *trigger* faz a auditoria falhar: a aprovação continua `PENDING`) |
 | TM-B7-08 | T | O estado do container muda entre a aprovação e a execução (ele já se recuperou sozinho) | **Residual no MVP.** A expiração curta reduz a janela, e o resultado registra o `stateBefore`. Uma possível evolução: *pré-condições* verificadas antes de executar ("só reinicia se ainda estiver `UNHEALTHY`"). | D05 §8.5 | — |
 
 ### B8 — Aplicação → PostgreSQL
@@ -238,7 +238,13 @@ Esses cenários usam o `ScriptedLlmGateway`, roteirizado para **obedecer à inje
 | S9 | Com Docker real: o `DB_PASSWORD` do container não aparece nem na `tool_execution.output` nem em nenhuma requisição enviada ao LLM (duas fronteiras diferentes) | `RealDockerIT.s9_…` |
 | — | O texto do LLM diz "reiniciei o demo-api", mas `actions[]` vem dos registros e fica vazio | `AgentIT.actionsComeFromTheRecords_notFromTheModelsText` |
 
-S10 e S11 dependem da aprovação (fatia 7).
+*Fatia 7 (aprovação, testes em `ApprovalIT`, pela API HTTP):*
+
+| # | Como foi provado | Teste |
+|---|---|---|
+| S3/S6 | Além da pausa da fatia 4: com a aprovação `PENDING`, nem a varredura de retomada roda nada, porque o texto do modelo não é uma decisão | `ApprovalIT.s6_theModelSayingItWasApproved_approvesNothing` |
+| S10 | 8 decisões em paralelo na mesma aprovação (1 `200` e 7 `409`) e 4 retomadas em paralelo: exatamente **um** restart no `FakeContainerRuntime` e um único `APPROVAL_GRANTED` na auditoria | `ApprovalIT.s10_concurrentDecisionsAndResumptions_restartExactlyOnce` |
+| S11 | O admin muda a autonomia para `OBSERVE_ONLY` com o restart pendente: a aprovação é aceita (`APPROVED`), mas a chamada vira `DENIED/NOT_ALLOWED_BY_AUTONOMY`, e o modelo recebe só essa negação | `ApprovalIT.s11_autonomyLoweredWhilePending_theApprovalStands_butTheCallIsDenied` |
 
 **Critério H1 (documento 01):** todos esses cenários passam e o `FakeContainerRuntime` registra **zero**
 operações não autorizadas.
