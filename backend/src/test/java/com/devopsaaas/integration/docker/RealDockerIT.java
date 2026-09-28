@@ -25,6 +25,7 @@ import com.devopsaaas.tool.policy.PolicyContext;
 import com.devopsaaas.tool.policy.ToolProposal;
 import com.devopsaaas.tool.testing.TestToolsConfiguration;
 import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.model.Capability;
 import com.github.dockerjava.api.model.HealthCheck;
 import com.github.dockerjava.api.model.HostConfig;
@@ -437,6 +438,10 @@ class RealDockerIT extends AgentTestSupport {
     /**
      * The findings that matter most, produced by the real Docker Engine and read through the proxy: a kernel
      * OOM kill, a plain SIGKILL (the ambiguous 137), an error exit, a SIGTERM stop and a restart loop.
+     * <p>
+     * Docker does not always flag a kernel OOM kill: once, on a cgroup v2 CI runner, the container exited with
+     * 137 and {@code OOMKilled=false}. What this test proves is that the backend reports what Docker says and
+     * never infers an OOM; that 137 with the flag gives {@code OOM_KILLED} is ContainerDiagnosticsTest's.
      */
     @Test
     void realContainers_produceTheExpectedFindings() {
@@ -462,7 +467,14 @@ class RealDockerIT extends AgentTestSupport {
             await().atMost(Duration.ofSeconds(60)).until(() -> restartCount(docker, cases.get("loop-case")) >= 3);
             cases.forEach((service, container) -> allowlistService(admin, environment.toString(), service, container));
 
-            assertThat(findingCodes("oom-case")).containsExactly("OOM_KILLED");
+            InspectContainerResponse.ContainerState oom = docker.inspectContainerCmd(cases.get("oom-case")).exec()
+                    .getState();
+            assertThat(oom.getExitCodeLong()).as("Docker's exit code for the OOM case").isEqualTo(137L);
+            ToolExecutionOutcome oomStatus = run("getContainerStatus", "{\"service\":\"oom-case\"}");
+            assertThat(data(oomStatus).get("exitCode").asInt()).isEqualTo(137);
+            assertThat(data(oomStatus).get("oomKilled").asBoolean()).isEqualTo(Boolean.TRUE.equals(oom.getOOMKilled()));
+            assertThat(findingCodes("oom-case")).as("Docker says OOMKilled=%s", oom.getOOMKilled())
+                    .containsExactly(Boolean.TRUE.equals(oom.getOOMKilled()) ? "OOM_KILLED" : "KILLED_BY_SIGKILL");
             assertThat(findingCodes("sigkill-case")).containsExactly("KILLED_BY_SIGKILL");
             assertThat(findingCodes("error-case")).containsExactly("EXITED_WITH_ERROR");
             assertThat(findingCodes("sigterm-case")).containsExactly("STOPPED");
