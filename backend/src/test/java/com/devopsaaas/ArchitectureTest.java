@@ -73,6 +73,15 @@ class ArchitectureTest {
                     "com.devopsaaas.environment..", "com.devopsaaas.audit..", "com.devopsaaas.integration..");
 
     /** The agent sits on top: tools, environments and the LLM never depend on it. */
+    /**
+     * Slice 7: the approval builds on tools (it closes waiting calls) and is used by the agent (which resumes).
+     * Tools learn about approvals only through an event, and approvals never call into the agent.
+     */
+    @ArchTest
+    static final ArchRule tools_do_not_depend_on_approvals = noClasses()
+            .that().resideInAPackage("com.devopsaaas.tool..")
+            .should().dependOnClassesThat().resideInAPackage("com.devopsaaas.approval..");
+
     @ArchTest
     static final ArchRule nothing_depends_on_the_agent = noClasses()
             .that().resideOutsideOfPackage("com.devopsaaas.agent..")

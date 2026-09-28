@@ -1,0 +1,17 @@
+{
+  "name": "test-approval-two",
+  "when": "\\[APPROVAL-TWO\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "Restarting demo-api twice.",
+      "toolCalls": [
+        {"name": "testRestart", "arguments": {"service": "demo-api"}},
+        {"name": "testRestart", "arguments": {"service": "demo-api"}}
+      ]
+    },
+    {
+      "text": "Result: {{lastToolResult}}"
+    }
+  ]
+}

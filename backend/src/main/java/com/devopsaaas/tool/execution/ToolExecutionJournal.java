@@ -6,9 +6,16 @@ import com.devopsaaas.audit.AuditOutcome;
 import com.devopsaaas.audit.AuditRecorder;
 import com.devopsaaas.audit.AuditResourceType;
 import com.devopsaaas.tool.api.ToolErrorCode;
+import com.devopsaaas.tool.policy.DenialReason;
+import com.devopsaaas.tool.policy.PolicyContext;
 import com.devopsaaas.tool.policy.PolicyDecision;
+import com.devopsaaas.tool.policy.PolicyOutcome;
+import com.devopsaaas.tool.policy.ToolProposal;
 import com.devopsaaas.tool.registry.RegisteredTool;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BiFunction;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -22,18 +29,35 @@ class ToolExecutionJournal {
     private static final int MAX_TOOL_NAME_CHARS = 100;
     private static final int MAX_TEXT_CHARS = 2000;
     private static final int MAX_CALL_ID_CHARS = 200;
+    private static final String NO_IMPACT_DESCRIPTION = "The tool declares no impact description.";
 
     private final ToolExecutionRepository executions;
     private final AuditRecorder audit;
     private final TransactionTemplate transactions;
     private final OutputProcessor processor;
+    private final ApplicationEventPublisher events;
 
     ToolExecutionJournal(ToolExecutionRepository executions, AuditRecorder audit, TransactionTemplate transactions,
-            OutputProcessor processor) {
+            OutputProcessor processor, ApplicationEventPublisher events) {
         this.executions = executions;
         this.audit = audit;
         this.transactions = transactions;
         this.processor = processor;
+        this.events = events;
+    }
+
+    /** Result of claiming an approved call under its row lock (slice 7). */
+    sealed interface Claim {
+    }
+
+    /** The call is no longer waiting: another resumption took it, or it was cancelled, rejected or expired. */
+    record NotWaiting() implements Claim {
+    }
+
+    record DeniedNow(ToolExecution execution) implements Claim {
+    }
+
+    record Claimed(ToolExecution execution, ToolExecutionRequest request, PolicyDecision decision) implements Claim {
     }
 
     ToolExecution denied(ToolExecutionRequest request, PolicyDecision decision) {
@@ -53,8 +77,62 @@ class ToolExecutionJournal {
             execution.awaitApproval();
             executions.save(execution);
             audit.record(entry(request, execution, AuditAction.TOOL_CALL_AWAITING_APPROVAL, AuditOutcome.SUCCESS));
+            String impact = decision.tool().definition().impactDescription();
+            // Same transaction: the approval is created with the call, or neither exists.
+            events.publishEvent(new ToolCallAwaitingApproval(request.context().organizationId(),
+                    request.agentExecutionId(), execution.getId(), request.context().requestedBy(),
+                    execution.getToolName(), execution.getRiskLevel(), execution.getArgumentsHash(),
+                    impact == null || impact.isBlank() ? NO_IMPACT_DESCRIPTION : impact, execution.getRationale()));
             return execution;
         });
+    }
+
+    /**
+     * Slice 7: takes an approved call out of WAITING_APPROVAL under its row lock, exactly once. The hashes are
+     * compared and the policy runs again with the state of now; only then is the call marked RUNNING, committed
+     * before the tool is invoked. Nothing here asks the LLM anything.
+     */
+    Claim claimApproved(ApprovedCall call, UUID environmentId,
+            BiFunction<PolicyContext, ToolProposal, PolicyDecision> policy) {
+        return transactions.execute(status -> {
+            Optional<ToolExecution> locked = executions.lockByIdAndOrganizationId(call.toolExecutionId(),
+                    call.organizationId());
+            if (locked.isEmpty() || locked.get().getStatus() != ToolExecutionStatus.WAITING_APPROVAL) {
+                return new NotWaiting();
+            }
+            ToolExecution execution = locked.get();
+            PolicyContext context = new PolicyContext(call.organizationId(), environmentId, call.requestedBy(), 1);
+            ToolExecutionRequest request = new ToolExecutionRequest(context, execution.getAgentExecutionId(),
+                    execution.getLlmCallId(), execution.getSeq(), new ToolProposal(execution.getToolName(),
+                            execution.getArguments(), execution.getLlmToolCallId(), execution.getRationale()));
+            if (!call.approvedArgumentsHash().equals(execution.getArgumentsHash())) {
+                return deniedNow(request, execution, DenialReason.ARGUMENTS_MISMATCH,
+                        "The recorded call no longer matches what was approved.");
+            }
+            PolicyDecision decision = policy.apply(context, request.proposal());
+            if (decision.outcome() == PolicyOutcome.DENY) {
+                return deniedNow(request, execution, decision.denialReason(),
+                        OutputProcessor.cleanText(decision.detail(), MAX_TEXT_CHARS));
+            }
+            // The stored arguments, bound again, must produce the very hash the human approved.
+            if (!call.approvedArgumentsHash().equals(decision.argumentsHash())) {
+                return deniedNow(request, execution, DenialReason.ARGUMENTS_MISMATCH,
+                        "The recorded arguments no longer match what was approved.");
+            }
+            execution.startApproved();
+            audit.record(entry(request, execution, AuditAction.TOOL_EXECUTION_STARTED, AuditOutcome.SUCCESS)
+                    .detail("approved", true));
+            return new Claimed(execution, request, decision);
+        });
+    }
+
+    private DeniedNow deniedNow(ToolExecutionRequest request, ToolExecution execution, DenialReason reason,
+            String detail) {
+        execution.deny(reason, detail);
+        audit.record(entry(request, execution, AuditAction.TOOL_CALL_DENIED, AuditOutcome.DENIED)
+                .detail("denialReason", reason)
+                .detail("approved", true));
+        return new DeniedNow(execution);
     }
 
     ToolExecution rejectedForCapacity(ToolExecutionRequest request, PolicyDecision decision) {

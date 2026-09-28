@@ -14,7 +14,8 @@ import org.springframework.stereotype.Component;
  *   <li>RUNNING executions cannot continue: INTERRUPTED;</li>
  *   <li>RUNNING tool calls may have reached the runtime: OUTCOME_UNKNOWN;</li>
  *   <li>QUEUED executions never started: dispatched again;</li>
- *   <li>WAITING_APPROVAL executions are untouched: they wait for a human, not for this process.</li>
+ *   <li>WAITING_APPROVAL executions are untouched: they wait for a human, not for this process. A decision
+ *       this process never acted on is picked up by the approval sweep ({@link ApprovalResumption}).</li>
  * </ul>
  */
 @Component

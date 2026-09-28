@@ -39,8 +39,21 @@ public class PolicyEngine {
     }
 
     public PolicyDecision evaluate(PolicyContext context, ToolProposal proposal) {
+        return evaluate(context, proposal, false);
+    }
+
+    /**
+     * The same chain for a call a human already approved (slice 7), run again with the state of NOW: autonomy,
+     * allowlist and the requester's permissions may have changed since the proposal. Two steps differ: the
+     * budget was already counted when the call was proposed, and "requires approval" is satisfied.
+     */
+    public PolicyDecision evaluateApproved(PolicyContext context, ToolProposal proposal) {
+        return evaluate(context, proposal, true);
+    }
+
+    private PolicyDecision evaluate(PolicyContext context, ToolProposal proposal, boolean approved) {
         try {
-            return chain(context, proposal);
+            return chain(context, proposal, approved);
         } catch (RuntimeException exception) {
             log.error("Policy evaluation failed; denying the proposal", exception);
             return PolicyDecision.deny(DenialReason.POLICY_ERROR, "The proposal could not be evaluated.",
@@ -48,7 +61,7 @@ public class PolicyEngine {
         }
     }
 
-    private PolicyDecision chain(PolicyContext context, ToolProposal proposal) {
+    private PolicyDecision chain(PolicyContext context, ToolProposal proposal, boolean approved) {
         Optional<ActiveEnvironment> environment =
                 environments.findActive(context.organizationId(), context.environmentId());
         if (environment.isEmpty()) {
@@ -97,14 +110,14 @@ public class PolicyEngine {
                     "The requesting user lacks the permission this tool requires.", tool, bound, target);
         }
 
-        // 6. There is budget left in the execution.
-        if (context.remainingToolCalls() <= 0) {
+        // 6. There is budget left in the execution (an approved call was counted when it was proposed).
+        if (!approved && context.remainingToolCalls() <= 0) {
             return PolicyDecision.deny(DenialReason.BUDGET_EXCEEDED, "The execution has no tool calls left.",
                     tool, bound, target);
         }
 
         // 7. Risky actions wait for a human decision.
-        if (PolicyRules.requiresApproval(definition, environment.get().autonomyLevel())) {
+        if (!approved && PolicyRules.requiresApproval(definition, environment.get().autonomyLevel())) {
             return PolicyDecision.of(PolicyOutcome.REQUIRE_APPROVAL, tool, bound, target);
         }
         return PolicyDecision.of(PolicyOutcome.ALLOW, tool, bound, target);

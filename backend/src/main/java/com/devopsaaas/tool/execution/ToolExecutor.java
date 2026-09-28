@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -76,6 +77,38 @@ public class ToolExecutor {
         };
     }
 
+    /**
+     * Slice 7: runs a call a human approved, exactly as it was recorded, after comparing the hashes and running
+     * the policy again with the state of now. Empty when the call was no longer waiting (already taken by
+     * another resumption, cancelled, rejected or expired): a second resumption never runs it twice.
+     */
+    public Optional<ToolExecutionOutcome> executeApproved(ApprovedCall call, UUID environmentId) {
+        ToolExecutionJournal.Claim claim = journal.claimApproved(call, environmentId, policy::evaluateApproved);
+        return switch (claim) {
+            case ToolExecutionJournal.NotWaiting notWaiting -> Optional.empty();
+            case ToolExecutionJournal.DeniedNow denied -> {
+                meters.counter("devops.tool.denials", "reason", denied.execution().getDenialReason().name())
+                        .increment();
+                yield Optional.of(record(denied.execution(), denied.execution().getToolName()));
+            }
+            case ToolExecutionJournal.Claimed claimed -> Optional.of(runClaimed(claimed));
+        };
+    }
+
+    private ToolExecutionOutcome runClaimed(ToolExecutionJournal.Claimed claimed) {
+        ToolDefinition definition = claimed.decision().tool().definition();
+        if (!acquireSlot(definition.timeout())) {
+            return record(journal.finished(claimed.request(), claimed.execution().getId(), ToolExecutionStatus.FAILED,
+                    0, null, ToolErrorCode.CAPACITY_EXCEEDED,
+                    "No execution slot became available before the tool's timeout."), definition.name());
+        }
+        try {
+            return invoke(claimed.request(), claimed.decision(), claimed.execution());
+        } finally {
+            slots.release();
+        }
+    }
+
     private ToolExecutionOutcome run(ToolExecutionRequest request, PolicyDecision decision) {
         RegisteredTool tool = decision.tool();
         ToolDefinition definition = tool.definition();
@@ -83,26 +116,32 @@ public class ToolExecutor {
             return record(journal.rejectedForCapacity(request, decision), tool.name());
         }
         try {
-            ToolExecution started = journal.started(request, decision);
-            Instant deadline = Instant.now().plus(definition.timeout());
-            ToolExecutionContext context = new ToolExecutionContext(
-                    request.context().organizationId(),
-                    request.context().environmentId(),
-                    request.agentExecutionId(),
-                    started.getId(),
-                    request.context().requestedBy(),
-                    decision.resolvedTarget(),
-                    deadline,
-                    MDC.get(RequestIdFilter.MDC_KEY));
-
-            Attempt attempt = invokeWithRetries(tool.tool(), definition, context, decision.input(), deadline);
-            ToolExecution finished = finish(request, started, definition, attempt);
-            meters.timer("devops.tool.duration", "tool", tool.name())
-                    .record(Duration.ofMillis(finished.getDurationMs() == null ? 0 : finished.getDurationMs()));
-            return record(finished, tool.name());
+            return invoke(request, decision, journal.started(request, decision));
         } finally {
             slots.release();
         }
+    }
+
+    /** Calls the tool for a call already recorded as RUNNING, and records how it ended. */
+    private ToolExecutionOutcome invoke(ToolExecutionRequest request, PolicyDecision decision, ToolExecution started) {
+        RegisteredTool tool = decision.tool();
+        ToolDefinition definition = tool.definition();
+        Instant deadline = Instant.now().plus(definition.timeout());
+        ToolExecutionContext context = new ToolExecutionContext(
+                request.context().organizationId(),
+                request.context().environmentId(),
+                request.agentExecutionId(),
+                started.getId(),
+                request.context().requestedBy(),
+                decision.resolvedTarget(),
+                deadline,
+                MDC.get(RequestIdFilter.MDC_KEY));
+
+        Attempt attempt = invokeWithRetries(tool.tool(), definition, context, decision.input(), deadline);
+        ToolExecution finished = finish(request, started, definition, attempt);
+        meters.timer("devops.tool.duration", "tool", tool.name())
+                .record(Duration.ofMillis(finished.getDurationMs() == null ? 0 : finished.getDurationMs()));
+        return record(finished, tool.name());
     }
 
     // ---- invocation ------------------------------------------------------------------------------------

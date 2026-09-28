@@ -219,6 +219,12 @@ concorrência.
 | **Critérios de aceite** | RF-41..43, RF-48, RNF-SEG-06, RNF-CONF-08, TM-B7-01..04/06/07 |
 | **Testes** | S3, S6, S10 e S11 da suíte do "LLM malicioso", aprovação reutilizada, hash divergente, aprovação expirada, aprovador sem permissão, decisão e auditoria atômicas, a execução em `WAITING_APPROVAL` sobrevive a um restart do backend |
 
+**Resultado da fatia 7** ([detalhes](fatias/07-aprovacao.md)): módulo `approval` com a máquina de estados do
+ADR-0006, criada na mesma transação da chamada; decisão de uso único com auditoria atômica; retomada que executa
+só a chamada gravada, depois de comparar os hashes e reavaliar a política com o estado atual; expiração e
+retomada por uma varredura idempotente, guiada pelo estado gravado. S3, S6, S10 e S11 provados pela API HTTP em
+`ApprovalIT`. A demonstração com a ferramenta real fica para a fatia 8, como planejado.
+
 ### Fatia 8 — Restart + verificação
 
 **Prova:** o fluxo completo de ponta a ponta: diagnóstico → proposta → aprovação → ação → verificação →

@@ -175,8 +175,11 @@ class ToolExecutorIT extends IntegrationTest {
 
         assertThat(outcome.status()).isEqualTo(ToolExecutionStatus.WAITING_APPROVAL);
         assertThat(row(outcome.toolExecutionId())).containsEntry("policy_decision", "REQUIRE_APPROVAL");
+        // Slice 7: the approval is created in the same transaction as the waiting call.
         assertThat(audit(outcome.toolExecutionId())).extracting(event -> event.get("action"))
-                .containsExactly("TOOL_CALL_AWAITING_APPROVAL");
+                .containsExactly("TOOL_CALL_AWAITING_APPROVAL", "APPROVAL_REQUESTED");
+        assertThat(jdbc.queryForObject("SELECT status FROM approval WHERE tool_execution_id = ?", String.class,
+                outcome.toolExecutionId())).isEqualTo("PENDING");
         assertThat(runtime.calls()).doesNotContain("restart:" + demoApiContainer);
     }
 

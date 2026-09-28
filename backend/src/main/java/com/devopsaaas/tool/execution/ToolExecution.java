@@ -160,6 +160,27 @@ public class ToolExecution {
         finish(ToolExecutionStatus.OUTCOME_UNKNOWN, attemptCount, null, false, 0, null, message);
     }
 
+    /** Slice 7: a human approved the call and the policy allows it NOW; recorded before the external call. */
+    void startApproved() {
+        status = ToolExecutionStatus.RUNNING;
+        startedAt = Timestamps.now();
+        updatedAt = startedAt;
+    }
+
+    /** A human rejected the call: it never runs. */
+    void reject() {
+        status = ToolExecutionStatus.REJECTED;
+        finishedAt = Timestamps.now();
+        updatedAt = finishedAt;
+    }
+
+    /** Nobody decided in time: the call never runs. */
+    void expire() {
+        status = ToolExecutionStatus.EXPIRED;
+        finishedAt = Timestamps.now();
+        updatedAt = finishedAt;
+    }
+
     /** A call waiting for approval whose execution was cancelled never runs. */
     void cancelWhileWaiting() {
         status = ToolExecutionStatus.CANCELLED;

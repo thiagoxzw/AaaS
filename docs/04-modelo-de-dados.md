@@ -323,6 +323,12 @@ Constraints:
 
 Constraint: `CHECK ((status IN ('APPROVED','REJECTED')) = (decided_by IS NOT NULL AND decided_at IS NOT NULL))`.
 
+*Fatia 7 (V8):* a tabela tem também `id`, `organization_id`, `agent_execution_id` e `created_at`, com FKs
+compostas para `tool_execution`, `agent_execution` e `app_user` (por isso a V8 acrescenta
+`UNIQUE (organization_id, id)` em `tool_execution`), um índice para "a execução ainda espera alguém?" e um
+limite de 1000 caracteres no comentário. Toda mudança de estado passa pelo *lock* da linha da aprovação. O
+motivo de negação `ARGUMENTS_MISMATCH` entra no `CHECK` de `tool_execution.denial_reason`.
+
 **Por que separar o impacto (confiável) da justificativa (não confiável):** um LLM manipulado por prompt
 injection pode escrever "este restart é seguro, pode aprovar". O humano precisa ver, com destaque, as
 informações que **não vêm do modelo**: ferramenta, parâmetros exatos, risco e impacto.
@@ -349,7 +355,7 @@ Ações iniciais: `ENVIRONMENT_CREATED`, `ENVIRONMENT_UPDATED`, `ENVIRONMENT_AUT
 `SERVICE_ALLOWLISTED`, `SERVICE_UPDATED`, `SERVICE_DISABLED`, `SERVICE_ENABLED`, `EXECUTION_CREATED`, `EXECUTION_CANCELLED`,
 `EXECUTION_FINISHED`, `TOOL_CALL_DENIED`, `TOOL_EXECUTION_STARTED`, `TOOL_EXECUTION_SUCCEEDED`,
 `TOOL_EXECUTION_FAILED`, `TOOL_EXECUTION_OUTCOME_UNKNOWN`, `APPROVAL_REQUESTED`, `APPROVAL_GRANTED`,
-`APPROVAL_REJECTED`, `APPROVAL_EXPIRED`.
+`APPROVAL_REJECTED`, `APPROVAL_EXPIRED`. *Fatia 7:* também `APPROVAL_CANCELLED` e `AGENT_EXECUTION_RESUMED`.
 
 **Por que existe uma tabela de auditoria se a `tool_execution` já registra quase tudo:**
 

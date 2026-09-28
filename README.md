@@ -15,8 +15,9 @@
 | [5](docs/fatias/05-diagnostico.md) | Diagnóstico determinístico: achados como `OOM_KILLED`, `KILLED_BY_SIGKILL` (não conclusivo), `UNHEALTHY`, calculados por regras e entregues ao LLM como fatos |
 | [6](docs/fatias/06-llm-real.md) | LLM real: adapter da OpenAI (Responses API), custo por execução e orçamento diário. O padrão continua `scripted` |
 | [6.1](docs/fatias/06-1-dados-atuais.md) | Dados atuais para o diagnóstico: logs só da execução atual por padrão e `health` só com o container rodando, a partir da primeira medição de H2 |
+| [7](docs/fatias/07-aprovacao.md) | Aprovação humana: ações de risco param em `WAITING_APPROVAL`, uma pessoa com `APPROVAL_DECIDE` aprova ou rejeita pela API, e a execução retoma com a chamada **exata** que foi aprovada, depois de reavaliar a política |
 
-A aprovação humana chega na fatia 7, e as ações com efeito (restart) na fatia 8. O README completo (exemplos, screenshots, API)
+As ações com efeito (restart) chegam na fatia 8, já passando pela aprovação da fatia 7. O README completo (exemplos, screenshots, API)
 será escrito conforme o sistema for construído.
 
 ## Como executar (estado atual)
@@ -54,6 +55,11 @@ EXEC=$(curl -s -X POST localhost:8080/api/v1/conversations/$CONV/messages -H "Au
   -H 'Content-Type: application/json' -H 'Idempotency-Key: my-first-question' \
   --data-binary @- <<<'{"content":"o demo-api está de pé?"}' | jq -r .executionId)     # 202 Accepted
 curl -s localhost:8080/api/v1/executions/$EXEC -H "Authorization: Bearer $TOKEN"   # status, resposta e actions[]
+
+# Aprovações (fatia 7). No compose, só aparecem a partir da fatia 8, com o restartContainer.
+curl -s "localhost:8080/api/v1/approvals?status=PENDING" -H "Authorization: Bearer $TOKEN"
+curl -s -X POST localhost:8080/api/v1/approvals/<APPROVAL_ID>/decision -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' --data-binary @- <<<'{"decision":"APPROVE","comment":"ok"}'
 
 # Caos na demo-api (sem autenticação de propósito; só em 127.0.0.1)
 curl -s -X POST localhost:8090/chaos/unhealthy     # health DOWN

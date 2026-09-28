@@ -33,7 +33,8 @@ class PolicyEngineTest {
     private final TargetResolver targets = mock(TargetResolver.class);
     private final PermissionLookup permissions = mock(PermissionLookup.class);
     private final PolicyEngine engine = new PolicyEngine(environments,
-            new ToolRegistry(List.of(new TestTools.StatusTool(new FakeContainerRuntime())), new FlatRecordSchemaGenerator()),
+            new ToolRegistry(List.of(new TestTools.StatusTool(new FakeContainerRuntime()),
+                    new TestTools.RiskyTool(new FakeContainerRuntime())), new FlatRecordSchemaGenerator()),
             new ArgumentBinder(Validation.buildDefaultValidatorFactory().getValidator()), targets, permissions);
 
     @Test
@@ -88,6 +89,29 @@ class PolicyEngineTest {
         assertThat(decision.canonicalArguments()).isEqualTo("{\"service\":\"demo-api\"}");
         assertThat(decision.argumentsHash()).hasSize(64);
         assertThat(decision.resolvedTarget()).isPresent();
+    }
+
+    /** Slice 7: approval is satisfied and the budget was counted at proposal time; everything else runs again. */
+    @Test
+    void anApprovedCall_skipsOnlyApprovalAndBudget_andIsStillDeniedByTheCurrentState() {
+        activeEnvironment(AutonomyLevel.ASSISTED);
+        when(targets.resolve(any(), any(), any()))
+                .thenReturn(Optional.of(FakeContainerRuntime.ref(UUID.randomUUID(), "demo-api", "c")));
+        when(permissions.currentPermissions(ORG, USER)).thenReturn(Set.of(Permission.TOOL_OPERATE));
+        ToolProposal restart = new ToolProposal("testRestart", "{\"service\":\"demo-api\"}", "c", null);
+        PolicyContext noBudgetLeft = new PolicyContext(ORG, ENV, USER, 0);
+
+        assertThat(engine.evaluate(new PolicyContext(ORG, ENV, USER, 10), restart).outcome())
+                .isEqualTo(PolicyOutcome.REQUIRE_APPROVAL);
+        assertThat(engine.evaluateApproved(noBudgetLeft, restart).outcome()).isEqualTo(PolicyOutcome.ALLOW);
+
+        when(permissions.currentPermissions(ORG, USER)).thenReturn(Set.of(Permission.AGENT_INTERACT));
+        assertThat(engine.evaluateApproved(noBudgetLeft, restart).denialReason())
+                .isEqualTo(DenialReason.INSUFFICIENT_PERMISSION);
+
+        activeEnvironment(AutonomyLevel.OBSERVE_ONLY);
+        assertThat(engine.evaluateApproved(noBudgetLeft, restart).denialReason())
+                .isEqualTo(DenialReason.NOT_ALLOWED_BY_AUTONOMY);
     }
 
     private void activeEnvironment(AutonomyLevel autonomy) {
