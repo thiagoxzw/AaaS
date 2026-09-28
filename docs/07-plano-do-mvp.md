@@ -197,7 +197,14 @@ nova medição com os mesmos 5 cenários ([detalhes](fatias/06-llm-real.md#valid
 **Resultado** ([detalhes](fatias/06-1-dados-atuais.md)): `getContainerLogs` lê por padrão só a execução atual
 (`since` = `StartedAt`, com nanossegundos), um `since` explícito alcança as anteriores, `health` vira
 `NOT_APPLICABLE` fora de `RUNNING` e o achado `RESTART_LOOP` diz como ver as execuções anteriores. O prompt não
-mudou. A nova medição de H2, com os mesmos 5 cenários, fica com o autor.
+mudou.
+
+**Segunda medição de H2** (2 rodadas, mesmos 5 cenários): `unhealthy`, `crash`, `oom` e `stop` ficaram Sim nas
+duas rodadas, e `kill` ficou Parcial (identifica SIGKILL sem inventar causa, mas não chega ao `docker kill`). Na
+primeira medição foram 3 Sim, 1 Parcial e 1 Não. Toda leitura de logs sem `since` recebeu só a execução atual.
+A melhora vem da combinação do filtro padrão com a nova descrição da ferramenta: o modelo pediu `since` em 4 de
+5 chamadas na primeira medição e em 1 de 10 na segunda. Por isso, ela não pode ser atribuída só ao filtro
+([detalhes](fatias/06-1-dados-atuais.md#segunda-medição-de-h2)).
 
 ### Fatia 7 — Aprovação
 
