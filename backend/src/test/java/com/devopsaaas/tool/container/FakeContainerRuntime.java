@@ -84,7 +84,9 @@ public class FakeContainerRuntime implements ContainerRuntime {
     public ContainerLogs logs(ContainerRef ref, LogQuery query) {
         calls.add("logs:" + ref.containerName());
         failIfScripted(ref);
-        List<LogLine> lines = logs.getOrDefault(ref.containerName(), List.of());
+        List<LogLine> lines = logs.getOrDefault(ref.containerName(), List.of()).stream()
+                .filter(line -> query.since() == null || !line.timestamp().isBefore(query.since()))
+                .toList();
         int from = Math.max(0, lines.size() - query.tail());
         return new ContainerLogs(ref.serviceName(), lines.subList(from, lines.size()), from > 0);
     }

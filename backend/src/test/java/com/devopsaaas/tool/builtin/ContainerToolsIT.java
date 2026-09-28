@@ -209,6 +209,8 @@ class ContainerToolsIT extends IntegrationTest {
     @Test
     void getContainerLogs_masksSecretsBeforeOutputLeavesExecutor() {
         String jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkZW1vIn0.c2lnbmF0dXJlLW5vdC1yZWFs"; // gitleaks:allow (fake fixture)
+        runtime.setSnapshot(demoApiContainer, new ContainerSnapshot(demoApiContainer, ContainerState.RUNNING,
+                HealthStatus.HEALTHY, null, false, 0, Instant.now().minusSeconds(60), null, "demo-api:local"));
         runtime.setLogs(demoApiContainer, List.of(
                 new LogLine(Instant.now(), "stdout", "login ok token " + jwt),
                 new LogLine(Instant.now(), "stderr", "connecting with password=hunter2-not-real"), // gitleaks:allow (fake fixture)
@@ -221,6 +223,64 @@ class ContainerToolsIT extends IntegrationTest {
                 outcome.toolExecutionId());
         assertThat(stored).doesNotContain(jwt, "hunter2-not-real", "‮").contains("<redacted", "<U+202E>");
         assertThat(outcome.output()).doesNotContain(jwt, "hunter2-not-real");
+    }
+
+    /** Slice 6.1: Docker keeps the logs of every run; the first H2 measurement read an old OOM as current. */
+    @Test
+    void getContainerLogs_readsOnlyTheCurrentRun_unlessSinceIsGiven() {
+        Instant started = Instant.now().minusSeconds(120).plusNanos(123_456_789);
+        runtime.setSnapshot(demoApiContainer, new ContainerSnapshot(demoApiContainer, ContainerState.EXITED,
+                HealthStatus.UNHEALTHY, 137, false, 0, started, started.plusSeconds(30), "demo-api:local"));
+        runtime.setLogs(demoApiContainer, List.of(
+                new LogLine(started.minusSeconds(60), "stderr", "previous run: java.lang.OutOfMemoryError"),
+                new LogLine(started.minusNanos(1), "stdout", "previous run: last line"),
+                new LogLine(started, "stdout", "current run: started"),
+                new LogLine(started.plusSeconds(10), "stdout", "current run: serving")));
+
+        JsonNode current = json.readTree(run(operator, "getContainerLogs", "{\"service\":\"demo-api\"}").output())
+                .get("data");
+        assertThat(current.get("scope").asString()).isEqualTo("CURRENT_RUN");
+        assertThat(Instant.parse(current.get("runStartedAt").asString())).isEqualTo(started);
+        assertThat(current.get("lines").valueStream().map(line -> line.get("text").asString()))
+                .containsExactly("current run: started", "current run: serving");
+
+        JsonNode window = json.readTree(run(operator, "getContainerLogs",
+                "{\"service\":\"demo-api\",\"since\":\"24h\"}").output()).get("data");
+        assertThat(window.get("scope").asString()).isEqualTo("SINCE");
+        assertThat(window.get("lines").size()).isEqualTo(4);
+    }
+
+    @Test
+    void getContainerLogs_ofANeverStartedContainer_readsEverything() {
+        runtime.setSnapshot(demoApiContainer, new ContainerSnapshot(demoApiContainer, ContainerState.CREATED,
+                HealthStatus.NONE, null, false, 0, null, null, "demo-api:local"));
+        runtime.setLogs(demoApiContainer, List.of(new LogLine(Instant.now(), "stdout", "a line")));
+
+        JsonNode data = json.readTree(run(operator, "getContainerLogs", "{\"service\":\"demo-api\"}").output())
+                .get("data");
+
+        assertThat(data.get("scope").asString()).isEqualTo("ALL_RUNS");
+        assertThat(data.get("lines").size()).isEqualTo(1);
+    }
+
+    /** Slice 6.1: Docker keeps the last health of a stopped container; it is not current evidence. */
+    @Test
+    void health_isNotApplicable_unlessTheContainerIsRunning() {
+        runtime.setState(demoApiContainer, ContainerState.EXITED, HealthStatus.UNHEALTHY);
+
+        JsonNode status = json.readTree(run(operator, "getContainerStatus", "{\"service\":\"demo-api\"}").output());
+        JsonNode list = json.readTree(run(operator, "listContainers", "{}").output());
+
+        assertThat(status.get("data").get("health").asString()).isEqualTo("NOT_APPLICABLE");
+        assertThat(list.get("data").get("services").valueStream()
+                .filter(service -> service.get("service").asString().equals("demo-api"))
+                .map(service -> service.get("health").asString())).containsExactly("NOT_APPLICABLE");
+        assertThat(status.get("findings").valueStream().map(finding -> finding.get("code").asString()))
+                .doesNotContain("UNHEALTHY");
+
+        runtime.setState(demoApiContainer, ContainerState.RUNNING, HealthStatus.UNHEALTHY);
+        assertThat(json.readTree(run(operator, "getContainerStatus", "{\"service\":\"demo-api\"}").output())
+                .get("data").get("health").asString()).isEqualTo("UNHEALTHY");
     }
 
     @Test

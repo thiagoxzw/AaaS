@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -134,7 +135,7 @@ public class DockerEngineContainerRuntime implements ContainerRuntime {
                             .queryParam("timestamps", 1)
                             .queryParam("tail", query.tail());
                     if (query.since() != null) {
-                        uri.queryParam("since", Instant.now().minus(query.since()).getEpochSecond());
+                        uri.queryParam("since", unixTime(query.since()));
                     }
                     return uri.build(ref.containerName());
                 })
@@ -276,6 +277,14 @@ public class DockerEngineContainerRuntime implements ContainerRuntime {
     }
 
     /** Docker reports "never" as year 1. */
+    /**
+     * Docker's {@code since}: seconds since the epoch, with the fraction. Whole seconds would let a restart within
+     * the same second leak the previous run's lines (verified on Docker 29.3.1).
+     */
+    static String unixTime(Instant instant) {
+        return instant.getEpochSecond() + "." + String.format(Locale.ROOT, "%09d", instant.getNano());
+    }
+
     static Instant instant(String value) {
         if (value == null || value.isBlank() || NO_DATE.equals(value)) {
             return null;

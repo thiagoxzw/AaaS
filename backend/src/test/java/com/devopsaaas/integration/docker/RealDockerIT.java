@@ -23,6 +23,7 @@ import com.devopsaaas.tool.policy.ToolProposal;
 import com.devopsaaas.tool.testing.TestToolsConfiguration;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.model.Capability;
+import com.github.dockerjava.api.model.HealthCheck;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.RestartPolicy;
 import java.io.IOException;
@@ -37,6 +38,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -388,6 +390,58 @@ class RealDockerIT extends AgentTestSupport {
         } finally {
             cases.values().forEach(container -> docker.removeContainerCmd(container).withForce(true).exec());
         }
+    }
+
+    /**
+     * Slice 6.1, on the real engine through the proxy: Docker keeps the logs of every run, and the tool reads only
+     * the current one unless since is given. A stopped container keeps its last health, which is not reported.
+     */
+    @Test
+    void realLogs_defaultToTheCurrentRun_andAStoppedContainersHealthIsNotApplicable() {
+        DockerClient docker = DockerClientFactory.instance().client();
+        List<String> created = new ArrayList<>();
+        try {
+            String runs = start(docker, "runs", HostConfig.newHostConfig(),
+                    "sh", "-c", "echo run-$(cat /proc/sys/kernel/random/uuid); echo run-done");
+            created.add(runs);
+            await().atMost(Duration.ofSeconds(10)).until(() -> !running(docker, runs));
+            docker.startContainerCmd(runs).exec();
+            allowlistService(admin, environment.toString(), "runs-case", runs);
+            await().atMost(Duration.ofSeconds(10)).until(() -> data(run("getContainerLogs",
+                    "{\"service\":\"runs-case\",\"since\":\"1h\"}")).get("lines").size() == 4);
+
+            List<String> everyRun = texts(data(run("getContainerLogs",
+                    "{\"service\":\"runs-case\",\"since\":\"1h\"}")));
+            JsonNode current = data(run("getContainerLogs", "{\"service\":\"runs-case\"}"));
+            assertThat(current.get("scope").asString()).isEqualTo("CURRENT_RUN");
+            assertThat(texts(current)).containsExactlyElementsOf(everyRun.subList(2, 4));
+            assertThat(everyRun.get(0)).as("each run prints its own marker").isNotEqualTo(everyRun.get(2));
+
+            String sick = docker.createContainerCmd(TARGET_IMAGE)
+                    .withName("devops-it-sick-" + SUFFIX)
+                    .withHealthcheck(new HealthCheck().withTest(List.of("CMD", "false"))
+                            .withInterval(Duration.ofSeconds(1).toNanos()).withRetries(1))
+                    .withCmd("sh", "-c", "trap 'exit 143' TERM; sleep 300 & wait")
+                    .exec().getId();
+            created.add(sick);
+            docker.startContainerCmd(sick).exec();
+            allowlistService(admin, environment.toString(), "sick-case", sick);
+            await().atMost(Duration.ofSeconds(30)).until(() -> "UNHEALTHY".equals(
+                    data(run("getContainerStatus", "{\"service\":\"sick-case\"}")).get("health").asString()));
+            docker.stopContainerCmd(sick).withTimeout(10).exec();
+
+            assertThat(docker.inspectContainerCmd(sick).exec().getState().getHealth().getStatus())
+                    .as("Docker keeps the last health").isEqualTo("unhealthy");
+            JsonNode stopped = data(run("getContainerStatus", "{\"service\":\"sick-case\"}"));
+            assertThat(stopped.get("state").asString()).isEqualTo("EXITED");
+            assertThat(stopped.get("health").asString()).isEqualTo("NOT_APPLICABLE");
+        } finally {
+            created.forEach(container -> docker.removeContainerCmd(container).withForce(true).exec());
+        }
+    }
+
+    private static List<String> texts(JsonNode logs) {
+        return logs.get("lines").valueStream().map(line -> line.get("text").asString()).toList();
     }
 
     private List<String> findingCodes(String service) {

@@ -14,6 +14,7 @@
 | [4](docs/fatias/04-agente.md) | O agente: loop controlado pelo backend, orçamentos, idempotência, cancelamento e recuperação, com um LLM **roteirizado** (`scripted`) |
 | [5](docs/fatias/05-diagnostico.md) | Diagnóstico determinístico: achados como `OOM_KILLED`, `KILLED_BY_SIGKILL` (não conclusivo), `UNHEALTHY`, calculados por regras e entregues ao LLM como fatos |
 | [6](docs/fatias/06-llm-real.md) | LLM real: adapter da OpenAI (Responses API), custo por execução e orçamento diário. O padrão continua `scripted` |
+| [6.1](docs/fatias/06-1-dados-atuais.md) | Dados atuais para o diagnóstico: logs só da execução atual por padrão e `health` só com o container rodando, a partir da primeira medição de H2 |
 
 A aprovação humana chega na fatia 7, e as ações com efeito (restart) na fatia 8. O README completo (exemplos, screenshots, API)
 será escrito conforme o sistema for construído.
