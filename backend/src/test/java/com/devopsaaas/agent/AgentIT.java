@@ -155,7 +155,8 @@ class AgentIT extends AgentTestSupport {
 
     @Test
     void s5_anObserveOnlyEnvironment_deniesRiskyProposals_andDoesNotOfferThem() {
-        String observeOnly = environment(admin, "OBSERVE_ONLY", uniqueName("observed"));
+        String observedContainer = uniqueName("observed");
+        String observeOnly = environment(admin, "OBSERVE_ONLY", observedContainer);
         String marker = "[S5] " + uniqueName("observe");
 
         JsonNode execution = ask(operator, conversation(operator, observeOnly), marker + " restart it");
@@ -163,7 +164,9 @@ class AgentIT extends AgentTestSupport {
         assertThat(actions(execution).getFirst().get("denialReason").asString()).isEqualTo("NOT_ALLOWED_BY_AUTONOMY");
         assertThat(llm.requestsFor(marker).getFirst().tools()).extracting(LlmToolSpec::name)
                 .doesNotContain("testRestart");
-        assertThat(runtime.calls()).noneMatch(call -> call.startsWith("restart:"));
+        // Scoped to this test's container: the runtime fake is shared by the whole suite.
+        assertThat(runtime.calls()).doesNotContain("restart:" + observedContainer);
+        assertThat(runtime.callsFor(observedContainer)).isZero();
     }
 
     @Test
