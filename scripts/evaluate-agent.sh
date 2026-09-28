@@ -8,6 +8,11 @@
 # Requires: the stack running (docker compose up -d), .env in the repository root, curl, jq and docker.
 # With LLM_PROVIDER=openai this spends money: every scenario is one agent execution.
 #
+# Slice 9c: next to the markdown table, one JSON line per scenario (evaluation-*.jsonl) keeps the raw data:
+# commit, provider, model, prompt version, scenario, time, cost, every call with its recorded arguments
+# (service, tail, since), the log scope it read, its policy outcome and findings, and the final state. The
+# arguments come from GET /tool-executions/{id}, already masked; nothing from .env is ever written.
+#
 # Also runs from Git Bash on Windows, where three things broke the first real run (docs/fatias/06-llm-real.md):
 # jq prints CRLF, curl.exe receives its arguments in the ANSI code page (so "á" left as one Latin-1 byte and
 # the backend rightly refused the JSON), and .env values may hold characters that are not valid shell.
@@ -46,6 +51,9 @@ CONTAINER=devops-demo-api
 QUESTION=${QUESTION:-"Por que minha API está fora do ar?"}
 OUT_DIR=evaluations
 OUT="$OUT_DIR/evaluation-$(date -u +%Y%m%dT%H%M%SZ).md"
+RAW="${OUT%.md}.jsonl"
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then COMMIT="$COMMIT-dirty"; fi
 mkdir -p "$OUT_DIR"
 
 auth=()
@@ -89,8 +97,8 @@ healthy_again() {
   curl -sSf -o /dev/null -X POST "$DEMO/chaos/recover" || fail "demo-api did not accept /chaos/recover"
 }
 
-ask() { # prints one markdown row
-  local scenario=$1 expected=$2 conversation execution view findings
+ask() { # prints one markdown row and appends one raw JSON line
+  local scenario=$1 expected=$2 conversation execution view calls='[]' call id final
   conversation=$(api POST /conversations "$(jq -n --arg e "$environment" --arg t "$scenario" \
     '{environmentId: $e, title: $t}')" | jq -r .id)
   # The question is read by jq from stdin, so no argument carries non-ASCII text on Windows either.
@@ -100,27 +108,45 @@ ask() { # prints one markdown row
     view=$(api GET "/executions/$execution")
     case $(jq -r .status <<<"$view") in QUEUED|RUNNING) sleep 1 ;; *) break ;; esac
   done
+  # Each call as the backend recorded it, read before any cancellation: arguments, log scope, findings.
+  for id in $(jq -r '.actions[].toolExecutionId' <<<"$view"); do
+    call=$(api GET "/tool-executions/$id" | jq -c '{seq: .action.seq, tool: .action.tool, target: .action.target,
+      arguments: .action.arguments, status: .result.status, denialReason: .result.denialReason,
+      errorCode: .result.errorCode, scope: .result.output.data.scope?,
+      findings: [.result.output.findings[]?.code]}')
+    calls=$(jq -c --argjson c "$call" '. + [$c]' <<<"$calls")
+  done
+  final=$(jq -r .status <<<"$view")
   # Slice 8: the evaluation never approves anything. A proposed restart is recorded as proposed (the row keeps
   # restartContainer→WAITING_APPROVAL) and the execution is cancelled, so it does not wait for a human.
-  if [ "$(jq -r .status <<<"$view")" = WAITING_APPROVAL ]; then
-    api POST "/executions/$execution/cancel" >/dev/null
+  if [ "$final" = WAITING_APPROVAL ]; then
+    final=$(api POST "/executions/$execution/cancel" | jq -r .status)
     view=$(jq '.statusReason = "proposta registrada e cancelada pela avaliação"' <<<"$view")
   fi
-  findings=$(docker compose exec -T postgres psql -U devops_agent -d devops_agent -At -c \
-    "SELECT string_agg(f->>'code', ', ') FROM tool_execution t, jsonb_array_elements(t.output->'findings') f
-     WHERE t.agent_execution_id = '$execution'" | tr -d '\r')
-  jq -r --arg s "$scenario" --arg e "$expected" --arg f "${findings:-—}" '
+  jq -c -n --arg s "$scenario" --arg e "$expected" --arg q "$QUESTION" --arg commit "$COMMIT" \
+    --arg provider "${LLM_PROVIDER:-scripted}" --arg final "$final" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --argjson calls "$calls" --argjson v "$view" '{recordedAt: $at, commit: $commit, provider: $provider,
+      model: $v.llmModel, promptVersion: $v.promptVersion, scenario: $s, expectedCause: $e, question: $q,
+      execution: {id: $v.executionId, status: $v.status, statusReason: $v.statusReason, finalStatus: $final,
+        usage: $v.usage}, calls: $calls, answer: $v.answer.text}' >>"$RAW"
+  jq -r --arg s "$scenario" --arg e "$expected" --argjson calls "$calls" '
+    def args: [.arguments // {} | to_entries[] | select(.key != "service" and .key != "reason" and .value != null)
+      | "\(.key)=\(.value)"] | join(", ");
     "| \($s) | \($e) | \(.status)\(if .statusReason then " (\(.statusReason))" else "" end) | " +
-    "\([.actions[] | "\(.tool)→\(.status)"] | join(", ")) | \($f) | " +
+    "\([$calls[] | "\(.tool)(\(args))→\(.status)\(if .denialReason then "/\(.denialReason)" else "" end)" +
+      "\(if .scope then " [\(.scope)]" else "" end)"] | join(", ")) | " +
+    "\([$calls[].findings[]] | if length == 0 then "—" else join(", ") end) | " +
     "\((.answer.text // "—") | gsub("\n"; " ") | gsub("\\|"; "/")) | \(.usage.estimatedCostUsd) |  |"' <<<"$view"
 }
 
 {
   echo "# Avaliação do agente ($(date -u +%Y-%m-%dT%H:%MZ))"
   echo
-  echo "Provedor: \`${LLM_PROVIDER:-scripted}\` · modelo: \`${LLM_MODEL:-scripted-v1}\` · pergunta: \"$QUESTION\""
+  echo "Provedor: \`${LLM_PROVIDER:-scripted}\` · modelo: \`${LLM_MODEL:-scripted-v1}\` · commit: \`$COMMIT\` · pergunta: \"$QUESTION\""
   echo
-  echo "| Cenário | Causa real | Execução | Ações | Achados do backend | Resposta do agente | Custo (USD) | Causa correta? |"
+  echo "Dados brutos, uma linha por cenário: \`$RAW\` (versão do prompt, argumentos de cada chamada, escopo dos logs, decisões)."
+  echo
+  echo "| Cenário | Causa real | Execução | Chamadas (argumentos) → resultado [escopo dos logs] | Achados do backend | Resposta do agente | Custo (USD) | Causa correta? |"
   echo "|---|---|---|---|---|---|---|---|"
 
   healthy_again
