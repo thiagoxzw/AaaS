@@ -5,23 +5,82 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.devopsaaas.shared.security.Permission;
 import com.devopsaaas.support.IntegrationTest;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /**
  * Every endpoint x every role: allowed exactly when the role's permissions include the one the endpoint
- * declares (TM-B1-08). Missing tokens are always 401.
+ * declares (TM-B1-08). Missing tokens are always 401. Since slice 9a the declared permission of EVERY handler
+ * under /api/v1 is also compared with {@link #DECLARED}, so an endpoint added without an entry fails here.
  */
 class AuthorizationMatrixIT extends IntegrationTest {
 
     @Autowired
     PermissionResolver permissionResolver;
+
+    @Autowired
+    @Qualifier("requestMappingHandlerMapping")
+    RequestMappingHandlerMapping handlers;
+
+    /** The specification: method and path of every API handler, and the only thing that authorizes it. */
+    private static final Map<String, String> DECLARED = Map.ofEntries(
+            Map.entry("POST /api/v1/auth/login", "public (SecurityConfiguration permitAll)"),
+            Map.entry("GET /api/v1/me", "isAuthenticated()"),
+            Map.entry("POST /api/v1/environments", "hasAuthority('ENVIRONMENT_MANAGE')"),
+            Map.entry("GET /api/v1/environments", "hasAuthority('EXECUTION_READ')"),
+            Map.entry("GET /api/v1/environments/{environmentId}", "hasAuthority('EXECUTION_READ')"),
+            Map.entry("PATCH /api/v1/environments/{environmentId}", "hasAuthority('ENVIRONMENT_MANAGE')"),
+            Map.entry("POST /api/v1/environments/{environmentId}/services", "hasAuthority('ENVIRONMENT_MANAGE')"),
+            Map.entry("GET /api/v1/environments/{environmentId}/services", "hasAuthority('EXECUTION_READ')"),
+            Map.entry("PATCH /api/v1/environments/{environmentId}/services/{serviceId}",
+                    "hasAuthority('ENVIRONMENT_MANAGE')"),
+            Map.entry("POST /api/v1/environments/{environmentId}/connectivity-check",
+                    "hasAuthority('ENVIRONMENT_MANAGE')"),
+            Map.entry("GET /api/v1/environments/{environmentId}/services/status", "hasAuthority('EXECUTION_READ')"),
+            Map.entry("GET /api/v1/tools", "hasAuthority('EXECUTION_READ')"),
+            Map.entry("POST /api/v1/conversations", "hasAuthority('AGENT_INTERACT')"),
+            Map.entry("POST /api/v1/conversations/{conversationId}/messages", "hasAuthority('AGENT_INTERACT')"),
+            Map.entry("GET /api/v1/executions/{executionId}", "hasAuthority('EXECUTION_READ')"),
+            Map.entry("POST /api/v1/executions/{executionId}/cancel", "hasAuthority('AGENT_INTERACT')"),
+            Map.entry("GET /api/v1/tool-executions/{toolExecutionId}", "hasAuthority('EXECUTION_READ')"),
+            Map.entry("GET /api/v1/approvals", "hasAuthority('EXECUTION_READ')"),
+            Map.entry("GET /api/v1/approvals/{approvalId}", "hasAuthority('EXECUTION_READ')"),
+            Map.entry("POST /api/v1/approvals/{approvalId}/decision", "hasAuthority('APPROVAL_DECIDE')"),
+            Map.entry("GET /api/v1/audit-events", "hasAuthority('AUDIT_READ')"));
+
+    /** Slice 9a: the handlers the application really has, read from Spring MVC, against the specification. */
+    @Test
+    void everyApiHandler_declaresExactlyThePermissionOfTheSpecification() {
+        Map<String, String> actual = new TreeMap<>();
+        handlers.getHandlerMethods().forEach((info, method) -> {
+            for (String path : info.getPatternValues()) {
+                if (!path.startsWith("/api/")) {
+                    continue;
+                }
+                PreAuthorize annotation = AnnotatedElementUtils.findMergedAnnotation(method.getMethod(),
+                        PreAuthorize.class);
+                for (RequestMethod verb : info.getMethodsCondition().getMethods()) {
+                    actual.put(verb + " " + path, annotation != null ? annotation.value()
+                            : "public (SecurityConfiguration permitAll)");
+                }
+            }
+        });
+
+        assertThat(actual).isEqualTo(new TreeMap<>(DECLARED));
+    }
 
     record Endpoint(HttpMethod method, String path, Permission required, boolean hasBody) {
     }

@@ -367,6 +367,84 @@ class ApprovalIT extends AgentTestSupport {
         assertThat(restarts()).isZero();
     }
 
+    /**
+     * Slice 9a: a decision and a cancellation at the same time, several rounds so the interleaving varies.
+     * Whichever wins, the restart runs at most once, only for a granted approval, and never for a call the
+     * cancellation reached first.
+     */
+    @Test
+    void approvingAndCancellingAtTheSameTime_restartsAtMostOnce_andNeverACancelledCall() throws Exception {
+        for (int round = 0; round < 6; round++) {
+            JsonNode waiting = ask(operator, conversation(operator, environment), echo());
+            String executionId = waiting.get("executionId").asString();
+            String approvalId = approvalOf(waiting).get("approvalId").asString();
+            long before = restarts();
+
+            List<Integer> statuses = race(
+                    () -> decide(approver, approvalId, "APPROVE", null).getStatusCode().value(),
+                    () -> post("/api/v1/executions/" + executionId + "/cancel", operator.token(), null)
+                            .getStatusCode().value());
+
+            JsonNode finished = finished(operator, executionId);
+            String approval = jdbc.queryForObject("SELECT status FROM approval WHERE id = ?::uuid", String.class,
+                    approvalId);
+            String call = actions(finished).getFirst().get("status").asString();
+            long ran = restarts() - before;
+            assertThat(ran).as("round %d", round).isLessThanOrEqualTo(1);
+            assertThat(approval).isIn("APPROVED", "CANCELLED");
+            if (ran == 1) {
+                assertThat(approval).isEqualTo("APPROVED");
+                assertThat(call).isEqualTo("SUCCEEDED");
+            } else {
+                assertThat(call).isEqualTo("CANCELLED");
+            }
+            if (approval.equals("CANCELLED")) {
+                assertThat(statuses.getFirst()).isEqualTo(409);
+            }
+            resumption.sweep();
+            assertThat(restarts() - before).isEqualTo(ran);
+        }
+    }
+
+    /**
+     * Slice 9a: a decision racing the expiration. The approval ends APPROVED or EXPIRED, with exactly one of
+     * the two audit events, and the restart runs if and only if it was approved.
+     */
+    @Test
+    void approvingAtTheMomentItExpires_endsInExactlyOneOutcome() throws Exception {
+        for (int round = 0; round < 6; round++) {
+            JsonNode waiting = ask(operator, conversation(operator, environment), echo());
+            String executionId = waiting.get("executionId").asString();
+            String approvalId = approvalOf(waiting).get("approvalId").asString();
+            long before = restarts();
+            long delay = 60 + 15L * round;
+            jdbc.update("UPDATE approval SET expires_at = now() + interval '100 milliseconds' WHERE id = ?::uuid",
+                    approvalId);
+
+            List<Integer> statuses = race(
+                    () -> {
+                        Thread.sleep(delay);
+                        return decide(approver, approvalId, "APPROVE", null).getStatusCode().value();
+                    },
+                    () -> {
+                        long end = System.nanoTime() + Duration.ofMillis(400).toNanos();
+                        while (System.nanoTime() < end) {
+                            resumption.sweep();
+                        }
+                        return 0;
+                    });
+
+            finished(operator, executionId);
+            String approval = jdbc.queryForObject("SELECT status FROM approval WHERE id = ?::uuid", String.class,
+                    approvalId);
+            assertThat(approval).as("round %d", round).isIn("APPROVED", "EXPIRED");
+            assertThat(count("SELECT count(*) FROM audit_event WHERE resource_id = ?::uuid "
+                    + "AND action IN ('APPROVAL_GRANTED', 'APPROVAL_EXPIRED')", approvalId)).isEqualTo(1);
+            assertThat(restarts() - before).isEqualTo(approval.equals("APPROVED") ? 1 : 0);
+            assertThat(statuses.getFirst()).isEqualTo(approval.equals("APPROVED") ? 200 : 409);
+        }
+    }
+
     /** TM-B7-07: if the audit event cannot be written, the decision is not written either. */
     @Test
     void theDecisionAndItsAuditEvent_areAtomic() {
@@ -379,7 +457,11 @@ class ApprovalIT extends AgentTestSupport {
         jdbc.execute("CREATE TRIGGER " + trigger + " BEFORE INSERT ON audit_event FOR EACH ROW EXECUTE FUNCTION "
                 + trigger + "()");
         try {
-            assertThat(decide(approver, approvalId, "APPROVE", null).getStatusCode().is5xxServerError()).isTrue();
+            ResponseEntity<String> failed = decide(approver, approvalId, "APPROVE", null);
+            assertThat(failed.getStatusCode().is5xxServerError()).isTrue();
+            // TM-B1-06 (slice 9a): the database's error, its SQL and the stack trace stay out of the response.
+            assertThat(failed.getBody()).doesNotContain("audit unavailable").doesNotContain("PSQL")
+                    .doesNotContain("insert into").doesNotContain("Exception").doesNotContain("at com.devopsaaas");
         } finally {
             jdbc.execute("DROP TRIGGER " + trigger + " ON audit_event");
             jdbc.execute("DROP FUNCTION " + trigger + "()");
@@ -453,6 +535,23 @@ class ApprovalIT extends AgentTestSupport {
                 .map(message -> ((LlmMessage.ToolResult) message).content())
                 .forEach(results::add);
         return results;
+    }
+
+    /** Two different tasks released at the same instant; their results in order. */
+    private static List<Integer> race(Callable<Integer> first, Callable<Integer> second) throws Exception {
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<Integer> a = pool.submit(() -> {
+                start.await();
+                return first.call();
+            });
+            Future<Integer> b = pool.submit(() -> {
+                start.await();
+                return second.call();
+            });
+            start.countDown();
+            return List.of(a.get(), b.get());
+        }
     }
 
     private static <T> List<T> inParallel(int threads, Callable<T> task) throws Exception {

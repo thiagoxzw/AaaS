@@ -2,6 +2,7 @@ package com.devopsaaas.integration.docker;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.devopsaaas.tool.container.ContainerLogs;
 import com.devopsaaas.tool.container.ContainerRef;
@@ -28,11 +29,15 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 /**
  * The adapter against recorded Docker Engine 29.3.1 responses (captured through the docker-socket-proxy and
  * kept in src/test/resources/docker-api), served by a stub on the JDK's HTTP server.
  */
+@ExtendWith(OutputCaptureExtension.class)
 class DockerEngineContainerRuntimeTest {
 
     private static final String API = "/v1.44";
@@ -210,6 +215,29 @@ class DockerEngineContainerRuntimeTest {
 
         stub.json("GET", API + "/containers/devops-demo-api-1/json", 200, "not json");
         assertCategory(() -> runtime.inspect(demoApi), Category.UNEXPECTED);
+    }
+
+    /**
+     * Slice 9a: an inspect body the adapter cannot parse is logged as a warning with its exception. The
+     * container's environment is not mapped, so even right next to the parse error neither the log nor any
+     * message in the exception chain carries it (Jackson's INCLUDE_SOURCE_IN_LOCATION is off). Finding 9a-02
+     * (docs/fatias/09a-evidencias.md): the value of a *mapped* field with the wrong type is quoted.
+     */
+    @Test
+    void anUnparsableInspect_neverLogsNorThrowsTheContainersEnvironment(CapturedOutput output) {
+        String secret = "canary-env-secret-in-a-broken-inspect";
+        for (String body : List.of(
+                "{\"Config\":{\"Env\":[\"DB_PASSWORD=" + secret + "\"],\"Image\":\"x\"},\"State\":{\"Status\": oops",
+                "{\"Config\":{\"Env\":[\"DB_PASSWORD=" + secret + "\"],\"Image\":\"x\"},\"State\":\"broken\"}",
+                "{\"Config\":{\"Env\":\"DB_PASSWORD=" + secret + "\",\"Image\":[1]},\"RestartCount\":\"x\"}")) {
+            stub.json("GET", API + "/containers/devops-demo-api-1/json", 200, body);
+            Throwable thrown = catchThrowable(() -> runtime.inspect(demoApi));
+            assertThat(thrown).isInstanceOf(ContainerRuntimeException.class);
+            for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
+                assertThat(String.valueOf(cause.getMessage())).doesNotContain(secret);
+            }
+        }
+        assertThat(output.getAll()).contains("Unexpected Docker API response").doesNotContain(secret);
     }
 
     @Test
