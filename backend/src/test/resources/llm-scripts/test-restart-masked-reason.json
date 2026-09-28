@@ -1,0 +1,17 @@
+{
+  "name": "test-restart-masked-reason",
+  "when": "\\[RESTART-MASKED\\]",
+  "priority": 100,
+  "turns": [
+    {
+      "text": "The logs point to the database credentials.",
+      "toolCalls": [{"name": "restartContainer", "arguments": {
+        "service": "demo-api",
+        "reason": "The logs show 'password: rejected' from the connection pool; a restart reloads the pool."
+      }}]
+    },
+    {
+      "text": "Result: {{lastToolResult}}"
+    }
+  ]
+}

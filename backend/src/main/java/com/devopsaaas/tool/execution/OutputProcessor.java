@@ -56,6 +56,18 @@ class OutputProcessor {
         return new Processed(jsonMapper.writeValueAsString(tree), false, redactions);
     }
 
+    /**
+     * Slice 9a (finding 9a-01): whether storing these arguments would change them. The hash a human approves
+     * covers the arguments as proposed, while the stored copy is sanitized and masked; if the two differ, the
+     * approved call could never run as shown.
+     */
+    boolean altersArguments(String canonicalJson) {
+        JsonNode original = jsonMapper.readTree(canonicalJson);
+        JsonNode cleaned = original.deepCopy();
+        clean(cleaned);
+        return !original.equals(cleaned);
+    }
+
     /** Arguments that could not be parsed: kept as a bounded, cleaned string for the audit trail. */
     Processed processRawArguments(String raw) {
         String bounded = raw == null ? "" : raw.length() > MAX_RAW_ARGUMENT_CHARS

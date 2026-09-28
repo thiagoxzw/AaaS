@@ -40,6 +40,15 @@ public record PolicyDecision(
         return Optional.ofNullable(tool);
     }
 
+    /**
+     * The same evaluated call, denied: for a check made after the policy that finds the call cannot go on
+     * (slice 9a: arguments that storing would mask). It only ever narrows a decision.
+     */
+    public PolicyDecision denied(DenialReason reason, String detail) {
+        return new PolicyDecision(PolicyOutcome.DENY, reason, detail, tool, input, target, canonicalArguments,
+                argumentsHash);
+    }
+
     /** A String argument of the validated input by name (slice 8: the declared justification), if any. */
     public Optional<String> argument(String name) {
         return input == null || name == null ? Optional.empty()

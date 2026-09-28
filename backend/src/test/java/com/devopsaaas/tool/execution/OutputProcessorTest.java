@@ -29,6 +29,21 @@ class OutputProcessorTest {
         assertThat(processed.truncated()).isFalse();
     }
 
+    /** Slice 9a, finding 9a-01: which arguments storing would change, and therefore never be approved. */
+    @Test
+    void altersArguments_isTrueExactlyWhenSanitizingOrMaskingChangesAValue() {
+        assertThat(processor.altersArguments("{\"service\":\"demo-api\",\"reason\":\"The pool is exhausted.\"}"))
+                .isFalse();
+        assertThat(processor.altersArguments("{\"reason\":\"line one\\nline two\\tindented\"}"))
+                .as("newlines and tabs are kept").isFalse();
+        assertThat(processor.altersArguments("{\"reason\":\"logs show 'password: rejected'\"}")).isTrue();
+        assertThat(processor.altersArguments("{\"reason\":\"sent Bearer abcdefgh12345678\"}")).isTrue();
+        assertThat(processor.altersArguments("{\"reason\":\"carriage\\rreturn\"}")).isTrue();
+        assertThat(processor.altersArguments("{\"reason\":\"zero\\u200Bwidth\"}")).isTrue();
+        assertThat(processor.altersArguments("{\"nested\":{\"list\":[\"ok\",\"token=abc123\"]}}")).isTrue();
+        assertThat(processor.altersArguments("{\"tail\":20,\"since\":null}")).isFalse();
+    }
+
     @Test
     void oversizedOutput_becomesAValidJsonPreview() {
         OutputProcessor.Processed processed =

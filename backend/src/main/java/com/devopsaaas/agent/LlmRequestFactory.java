@@ -8,6 +8,7 @@ import com.devopsaaas.llm.LlmToolSpec;
 import com.devopsaaas.shared.security.Permission;
 import com.devopsaaas.tool.execution.ToolCallRecord;
 import com.devopsaaas.tool.execution.ToolExecutionHistory;
+import com.devopsaaas.tool.policy.DenialReason;
 import com.devopsaaas.tool.policy.ToolCatalog;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -108,7 +109,14 @@ class LlmRequestFactory {
                 result.put("output", call.output() == null ? null : json.readTree(call.output()));
                 result.put("outputTruncated", call.outputTruncated());
             }
-            case DENIED -> result.put("reason", call.denialReason().name());
+            case DENIED -> {
+                result.put("reason", call.denialReason().name());
+                // Slice 9a: invalid arguments are the model's own to fix, and their messages are written by the
+                // backend (field and rule, never a value), so the model learns what to change.
+                if (call.denialReason() == DenialReason.INVALID_ARGUMENTS && call.errorMessage() != null) {
+                    result.put("message", call.errorMessage());
+                }
+            }
             default -> {
                 if (call.errorCode() != null) {
                     result.put("errorCode", call.errorCode().name());

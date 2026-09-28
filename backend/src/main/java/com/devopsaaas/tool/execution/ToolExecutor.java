@@ -10,6 +10,7 @@ import com.devopsaaas.tool.api.ToolExecutionContext;
 import com.devopsaaas.tool.api.ToolInput;
 import com.devopsaaas.tool.api.ToolResult;
 import com.devopsaaas.tool.container.ContainerRuntimeException;
+import com.devopsaaas.tool.policy.DenialReason;
 import com.devopsaaas.tool.policy.PolicyDecision;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import com.devopsaaas.tool.policy.PolicyEngine;
@@ -52,6 +53,11 @@ public class ToolExecutor {
     private final ToolExecutionProperties properties;
     private final MeterRegistry meters;
     private final Semaphore slots;
+
+    static final String ARGUMENTS_WOULD_BE_MASKED = "An argument contains text that would be masked or altered "
+            + "before a human sees it (something that looks like a credential or token, or a control or invisible "
+            + "character), so the approved call could never run as shown. Propose it again without quoting "
+            + "credentials, tokens or special characters.";
     private final ExecutorService threads = Executors.newVirtualThreadPerTaskExecutor();
 
     ToolExecutor(PolicyEngine policy, ToolExecutionJournal journal, OutputProcessor processor,
@@ -72,7 +78,20 @@ public class ToolExecutor {
                 meters.counter("devops.tool.denials", "reason", decision.denialReason().name()).increment();
                 yield record(execution, tag(decision));
             }
-            case REQUIRE_APPROVAL -> record(journal.awaitingApproval(request, decision), tag(decision));
+            case REQUIRE_APPROVAL -> {
+                // Slice 9a (finding 9a-01): an approval is only created for a call that can run exactly as
+                // the human sees it. Arguments that storing would sanitize or mask could never match the
+                // approved hash again, so the proposal is refused before any approval exists.
+                if (processor.altersArguments(decision.canonicalArguments())) {
+                    PolicyDecision refused = decision.denied(DenialReason.INVALID_ARGUMENTS,
+                            ARGUMENTS_WOULD_BE_MASKED);
+                    ToolExecution execution = journal.denied(request, refused);
+                    meters.counter("devops.tool.denials", "reason", DenialReason.INVALID_ARGUMENTS.name())
+                            .increment();
+                    yield record(execution, tag(refused));
+                }
+                yield record(journal.awaitingApproval(request, decision), tag(decision));
+            }
             case ALLOW -> run(request, decision);
         };
     }
