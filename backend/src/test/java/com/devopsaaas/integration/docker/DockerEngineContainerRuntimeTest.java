@@ -165,15 +165,16 @@ class DockerEngineContainerRuntimeTest {
     }
 
     @Test
-    void logs_sinceIsSentAsUnixSeconds() {
+    void logs_sinceIsSentAsUnixTime_withTheNanoseconds() {
         stub.respond("GET", API + "/containers/devops-demo-api-1/logs", new DockerApiStub.Response(200,
                 "application/vnd.docker.multiplexed-stream", new byte[0], 0));
-        long expected = Instant.now().minus(Duration.ofMinutes(15)).getEpochSecond();
 
-        runtime.logs(demoApi, new LogQuery(10, Duration.ofMinutes(15)));
+        runtime.logs(demoApi, new LogQuery(10, Instant.parse("2026-09-28T02:54:59.231776520Z")));
+        runtime.logs(demoApi, new LogQuery(10, Instant.parse("2026-09-28T02:54:59Z")));
 
-        String since = stub.requests().getFirst().replaceAll(".*since=(\\d+).*", "$1");
-        assertThat(Long.parseLong(since)).isBetween(expected - 5, expected + 5);
+        // Whole seconds would let a restart within the same second leak the previous run's lines.
+        assertThat(stub.requests().get(0)).contains("since=1790564099.231776520");
+        assertThat(stub.requests().get(1)).contains("since=1790564099.000000000");
     }
 
     @Test

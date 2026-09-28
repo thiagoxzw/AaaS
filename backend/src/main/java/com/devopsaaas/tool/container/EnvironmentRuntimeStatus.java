@@ -67,7 +67,7 @@ public class EnvironmentRuntimeStatus {
         for (int i = 0; i < allowlist.size(); i++) {
             ContainerSnapshot snapshot = snapshots.get(i);
             statuses.add(new ServiceStatus(allowlist.get(i).ref().serviceName(), allowlist.get(i).description(),
-                    snapshot.state(), snapshot.health()));
+                    snapshot.state(), HealthStatus.reported(snapshot.state(), snapshot.health())));
         }
         return statuses;
     }

@@ -88,7 +88,8 @@ public class ListContainersTool implements Tool<ListContainersTool.Input> {
         for (int i = 0; i < allowlist.size(); i++) {
             ContainerSnapshot snapshot = snapshots.get(i);
             services.add(new ServiceView(allowlist.get(i).ref().serviceName(), allowlist.get(i).description(),
-                    snapshot.state(), snapshot.health(), snapshot.restartCount()));
+                    snapshot.state(), HealthStatus.reported(snapshot.state(), snapshot.health()),
+                    snapshot.restartCount()));
             findings.addAll(diagnostics.diagnose(snapshot));
         }
         return ToolResult.success(new Output(services), findings);

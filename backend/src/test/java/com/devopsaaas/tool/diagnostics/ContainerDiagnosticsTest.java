@@ -84,6 +84,32 @@ class ContainerDiagnosticsTest {
                 .containsEntry("service", "demo-api").containsEntry("state", "EXITED");
     }
 
+    /** Slice 6.1: a stopped container keeps its last health in Docker; the evidence does not repeat it. */
+    @Test
+    void theEvidence_neverShowsTheStaleHealthOfAStoppedContainer() {
+        Finding stopped = diagnostics.diagnose(new ContainerSnapshot("demo-api", EXITED, UNHEALTHY, 137, false, 0,
+                LONG_AGO, NOW, "demo:1")).getFirst();
+        Finding running = diagnostics.diagnose(new ContainerSnapshot("demo-api", RUNNING, UNHEALTHY, 0, false, 0,
+                LONG_AGO, null, "demo:1")).getFirst();
+
+        assertThat(stopped.code()).isEqualTo("KILLED_BY_SIGKILL");
+        assertThat(stopped.evidence()).containsEntry("health", "NOT_APPLICABLE");
+        assertThat(running.code()).isEqualTo("UNHEALTHY");
+        assertThat(running.evidence()).containsEntry("health", "UNHEALTHY");
+    }
+
+    /** Slice 6.1: logs default to the current run, so the finding says how to reach the earlier ones. */
+    @Test
+    void aRestartLoop_pointsToTheLogsOfEarlierRuns() {
+        for (ContainerSnapshot snapshot : List.of(
+                new ContainerSnapshot("demo-api", RESTARTING, NONE, 1, false, 1, LONG_AGO, NOW, "demo:1"),
+                new ContainerSnapshot("demo-api", RUNNING, HEALTHY, 0, false, 5, LONG_AGO, null, "demo:1"))) {
+            assertThat(diagnostics.diagnose(snapshot)).filteredOn(finding -> finding.code().equals("RESTART_LOOP"))
+                    .singleElement().satisfies(finding -> assertThat(finding.message())
+                            .contains("earlier runs").contains("getContainerLogs").contains("since"));
+        }
+    }
+
     @Test
     void findingsAreOrderedBySeverity_thenCode() {
         List<Finding> findings = diagnostics.diagnose(new ContainerSnapshot("demo-api", RUNNING, UNHEALTHY, 0,

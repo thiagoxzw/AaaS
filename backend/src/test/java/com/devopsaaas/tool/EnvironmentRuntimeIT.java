@@ -67,6 +67,12 @@ class EnvironmentRuntimeIT extends IntegrationTest {
         assertThat(services.get(0).get("state").asString()).isEqualTo("RUNNING");
         assertThat(services.get(0).get("health").asString()).isEqualTo("UNHEALTHY");
         assertThat(response.getBody()).doesNotContain(container);
+
+        // Slice 6.1: a stopped container keeps its last health in Docker; people see that it does not apply.
+        runtime.setState(container, ContainerState.EXITED, HealthStatus.UNHEALTHY);
+        JsonNode stopped = read(get("/api/v1/environments/" + environment + "/services/status",
+                admin.token()));
+        assertThat(stopped.get(0).get("health").asString()).isEqualTo("NOT_APPLICABLE");
     }
 
     @Test

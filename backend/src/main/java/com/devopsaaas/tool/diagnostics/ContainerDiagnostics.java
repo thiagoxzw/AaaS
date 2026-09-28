@@ -28,6 +28,10 @@ public final class ContainerDiagnostics {
     private static final int SIGTERM = 143;
 
     private final DiagnosticsProperties properties;
+    /** Slice 6.1: logs default to the current run, and the cause of a restart loop is often in an earlier one. */
+    private static final String EARLIER_RUNS =
+            " Logs of earlier runs are only returned when getContainerLogs is called with since.";
+
     private final Clock clock;
 
     public ContainerDiagnostics(DiagnosticsProperties properties, Clock clock) {
@@ -75,10 +79,11 @@ public final class ContainerDiagnostics {
         }
         if (state == ContainerState.RESTARTING) {
             findings.add(finding(ContainerFindingCode.RESTART_LOOP, FindingSeverity.MEDIUM,
-                    "The container is being restarted by its restart policy.", snapshot));
+                    "The container is being restarted by its restart policy." + EARLIER_RUNS, snapshot));
         } else if (snapshot.restartCount() >= properties.restartLoopThreshold()) {
             findings.add(finding(ContainerFindingCode.RESTART_LOOP, FindingSeverity.MEDIUM,
-                    "The restart policy has restarted the container " + snapshot.restartCount() + " times.",
+                    "The restart policy has restarted the container " + snapshot.restartCount() + " times."
+                            + EARLIER_RUNS,
                     snapshot));
         }
         if (running && snapshot.startedAt() != null
@@ -105,7 +110,8 @@ public final class ContainerDiagnostics {
         evidence.put("service", snapshot.serviceName());
         evidence.put("state", snapshot.state().name());
         if (snapshot.health() != null) {
-            evidence.put("health", snapshot.health().name());
+            // The rules read the raw value; the evidence shows what is true now (slice 6.1).
+            evidence.put("health", HealthStatus.reported(snapshot.state(), snapshot.health()).name());
         }
         if (snapshot.exitCode() != null) {
             evidence.put("exitCode", snapshot.exitCode().toString());

@@ -39,8 +39,9 @@ public class GetContainerStatusTool implements Tool<GetContainerStatusTool.Input
     }
 
     private static final ToolDefinition DEFINITION = ToolDefinition.builder("getContainerStatus")
-            .description("Get detailed status of one service: state, health, exit code, OOM flag, restart count, "
-                    + "timestamps, image, and deterministic findings computed by the backend.")
+            .description("Get detailed status of one service: state, health (NOT_APPLICABLE unless running), exit "
+                    + "code, OOM flag, restart count, timestamps, image, and deterministic findings computed by the "
+                    + "backend.")
             .category(ToolCategory.CONTAINER)
             .riskLevel(RiskLevel.READ_ONLY)
             .requiredPermission(Permission.AGENT_INTERACT)
@@ -73,7 +74,8 @@ public class GetContainerStatusTool implements Tool<GetContainerStatusTool.Input
         ContainerRef target = context.target().orElseThrow(
                 () -> new IllegalStateException("getContainerStatus runs only with a resolved target"));
         ContainerSnapshot snapshot = runtime.inspect(target);
-        return ToolResult.success(new Output(target.serviceName(), snapshot.state(), snapshot.health(),
+        return ToolResult.success(new Output(target.serviceName(), snapshot.state(),
+                HealthStatus.reported(snapshot.state(), snapshot.health()),
                 snapshot.exitCode(), snapshot.oomKilled(), snapshot.restartCount(), snapshot.startedAt(),
                 snapshot.finishedAt(), snapshot.image()), diagnostics.diagnose(snapshot));
     }
