@@ -94,6 +94,25 @@ CI não tem o problema: o `docker build` compila do zero.
 O resumo e o artefato são gerados antes da verificação, então o relatório fica disponível mesmo quando ela
 falha.
 
+## Achado 9c-03: CI da `main` vermelho no teste de OOM com Docker real
+
+O CI da `main` após o merge da 9c (run 42) falhou em `RealDockerIT.realContainers_produceTheExpectedFindings`.
+O contêiner que estoura o limite de 16 MB saiu com o código 137, mas o Docker do runner não marcou
+`OOMKilled`. Por isso o backend produziu `KILLED_BY_SIGKILL` ("may have been an out-of-memory kill... not
+conclusive"), e o teste esperava `OOM_KILLED`. O mesmo código tinha passado no CI do PR (run 41) e em todas as
+execuções desde a fatia 5.
+
+Aqui (Docker 29.3.1, cgroup v1), 30 repetições saíram todas com `137/true`. O runner `ubuntu-24.04` usa
+cgroup v2. A causa dentro do Docker não foi verificada; não há fonte confirmada aqui.
+
+**Decisão do autor:** o teste lê o estado do contêiner direto do Docker, fora da API do backend. Com
+`OOMKilled=true`, exige `OOM_KILLED`. Com `false`, exige `KILLED_BY_SIGKILL`. Nos dois casos exige o código 137 e
+que o `getContainerStatus` repita a marca e o código que o Docker dá. A regra "137 com a marca → `OOM_KILLED`"
+continua provada no `ContainerDiagnosticsTest`, sem Docker.
+
+**Limitação:** o teste com Docker real não garante que todo runner com cgroup v2 produza a marca de OOM. Ele
+garante que o backend classifica fielmente o que o Docker reporta e nunca deduz um OOM que o Docker não marcou.
+
 ## Medição final de H2 (na máquina do autor)
 
 A mesma avaliação das medições anteriores, com o modelo real. Ela não roda no CI: exige a chave, gasta dinheiro e
