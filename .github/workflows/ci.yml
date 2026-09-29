@@ -45,6 +45,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: cp .env.example .env
+      # R-01: the example has no working secrets, so an unfilled copy must not start the stack.
+      - name: The unfilled example is refused
+        run: |
+          if docker compose config --quiet 2>/dev/null; then
+            echo "docker compose accepted the unfilled .env.example: it must not ship working secrets" >&2
+            exit 1
+          fi
+      - name: Fill throwaway secrets
+        run: |
+          for name in POSTGRES_PASSWORD GRAFANA_ADMIN_PASSWORD JWT_SECRET ADMIN_PASSWORD; do
+            sed -i "s/^$name=$/$name=$(openssl rand -hex 32)/" .env
+          done
       - run: docker compose config --quiet
       # RNF-SEG-15: nothing may be published outside 127.0.0.1.
       - run: ./scripts/check-compose-ports.sh

@@ -30,9 +30,9 @@
  Auditoria ─► quem pediu, o que foi observado, por quê, quem aprovou, quando, resultado
 ```
 
-**Status:** MVP funcional (fatias 0–9c), com a medição final de H2 feita
-([resultado](docs/fatias/09c-release.md#resultado-2026-09-29)). A release `v0.1.0` vem depois de uma revisão
-final ([plano](docs/07-plano-do-mvp.md)).
+**Status:** `v0.1.0`, o fechamento do MVP ([plano](docs/07-plano-do-mvp.md)): fatias 0–9c, medição final de H2
+([resultado](docs/fatias/09c-release.md#resultado-2026-09-29)) e revisão final
+([achados](docs/fatias/09c-release.md#revisão-final)).
 
 ## O que é
 
@@ -145,10 +145,13 @@ em [9a — Evidências](docs/fatias/09a-evidencias.md).
 
 ## Como executar
 
-Requisitos: Docker com Compose. Para rodar os testes: JDK 25.
+Requisitos: Docker com Compose; para os scripts, bash, `curl` e `jq`. Para rodar os testes: JDK 25.
 
 ```bash
-cp .env.example .env          # troque todos os valores; sem eles o compose não sobe
+cp .env.example .env
+# Preencha POSTGRES_PASSWORD, GRAFANA_ADMIN_PASSWORD, JWT_SECRET e ADMIN_PASSWORD, cada um com um valor novo:
+openssl rand -hex 32
+# Enquanto algum estiver vazio, o compose se recusa a subir: não há senha padrão.
 docker compose up -d --build
 scripts/demo.sh
 ```
