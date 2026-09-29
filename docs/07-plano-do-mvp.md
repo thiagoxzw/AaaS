@@ -283,8 +283,15 @@ chamadas em andamento ficou registrado como limitação conhecida (O-9b-2).
 
 A varredura encontrou 3 vulnerabilidades classificadas como CRITICAL pelo Trivy no Tomcat embutido 11.0.24
 (9c-01). O Tomcat subiu para 11.0.26, e as imagens ficaram sem nenhuma vulnerabilidade reportada. O CI passou a
-falhar em CRITICAL com correção disponível (9c-02). Depois vêm a medição final de H2, a revisão final e a tag
-`v0.1.0`.
+falhar em CRITICAL com correção disponível (9c-02). O teste de OOM com Docker real passou a classificar pelo
+que o próprio Docker reporta, depois que um runner com cgroup v2 não marcou `OOMKilled` (9c-03).
+
+**Medição final de H2** ([detalhes](fatias/09c-release.md#resultado-2026-09-29)), duas rodadas com o mesmo
+modelo da 6.1: **3 Sim, 2 Parcial, 0 Não**, na consolidação do autor. `unhealthy`, `crash` e `oom` ficaram Sim nas
+duas rodadas. O `kill` ficou Parcial nas duas: identifica SIGKILL, mas não chega ao `docker kill`. O `stop` ficou
+Parcial na rodada 1, quando o modelo pediu histórico e pôs um OOM anterior como causa principal, e Sim na rodada 2.
+O padrão `CURRENT_RUN` reduz a contaminação por histórico, mas não impede o modelo de pedi-lo. A H2 está
+encerrada, sem mudança no produto. Faltam a revisão final e a tag `v0.1.0`.
 
 ## 4. Definição de pronto (vale para toda fatia)
 

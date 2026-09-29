@@ -30,8 +30,9 @@
  Auditoria ─► quem pediu, o que foi observado, por quê, quem aprovou, quando, resultado
 ```
 
-**Status:** MVP funcional (fatias 0–9b). A release `v0.1.0` vem depois da fatia 9c, da medição final de H2 e de
-uma revisão final ([plano](docs/07-plano-do-mvp.md)).
+**Status:** MVP funcional (fatias 0–9c), com a medição final de H2 feita
+([resultado](docs/fatias/09c-release.md#resultado-2026-09-29)). A release `v0.1.0` vem depois de uma revisão
+final ([plano](docs/07-plano-do-mvp.md)).
 
 ## O que é
 

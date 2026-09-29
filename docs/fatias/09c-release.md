@@ -130,8 +130,62 @@ mede o modelo, não o código.
 a uma causa única:** entre a primeira medição e a final mudaram os dados (fatia 6.1), a descrição das
 ferramentas e o próprio modelo pode ter mudado.
 
+### Resultado (2026-09-29)
+
+Duas rodadas seguidas na máquina do autor, com o mesmo modelo da 6.1 (`gpt-5.6-luna`), a mesma pergunta, os
+mesmos 5 cenários e a `main` em `964ac09`, sem mudanças locais. A versão do prompt é a `agent-system-v2`,
+segundo o autor. A coluna "Causa correta?" é do autor, com o
+[critério da 6.1](06-1-dados-atuais.md#critério-de-avaliação), sem transformar os casos numa taxa de acerto.
+
+O `.md` e o `.jsonl` ficaram na máquina do autor, porque `evaluations/` não é versionado. **Os números abaixo são
+os informados pelo autor**; não foram conferidos a partir dos arquivos.
+
+| Cenário | 1ª medição | 6.1, rodada 1 | 6.1, rodada 2 | Final, rodada 1 | Final, rodada 2 |
+|---|---|---|---|---|---|
+| unhealthy | ✅ Sim | ✅ Sim | ✅ Sim | ✅ Sim | ✅ Sim |
+| crash | ✅ Sim | ✅ Sim | ✅ Sim | ✅ Sim | ✅ Sim |
+| oom | ✅ Sim (deslize) | ✅ Sim | ✅ Sim | ✅ Sim | ✅ Sim |
+| kill | ❌ Não | 🟡 Parcial | 🟡 Parcial | 🟡 Parcial | 🟡 Parcial |
+| stop | 🟡 Parcial | ✅ Sim | ✅ Sim | 🟡 Parcial | ✅ Sim |
+
+**H2 final, consolidada pelo autor: 3 Sim, 2 Parcial, 0 Não.** O `stop`, que variou entre as duas rodadas, conta
+como Parcial. Cada rodada, sozinha, deu 3 Sim e 2 Parcial (rodada 1) e 4 Sim e 1 Parcial (rodada 2).
+
+- **`unhealthy`, `crash` e `oom`: Sim nas duas rodadas.** No `oom`, o modelo separou o OOM da JVM (código 3,
+  `OutOfMemoryError: Java heap space`) de um OOM do kernel (`OOMKilled=false`). O deslize da primeira medição
+  ("reiniciou uma vez") não apareceu.
+- **`kill`: Parcial nas duas rodadas, como na 6.1.** O modelo identificou SIGKILL (137, sem `oomKilled`) e não
+  inventou uma causa, mas não chegou ao `docker kill`. Os dados do backend não distinguem um `docker kill` de um
+  `docker stop` que estourou o prazo (6.1).
+- **`stop`: Parcial na rodada 1, Sim na rodada 2.** Na rodada 1, o modelo pediu histórico (`since: "2h"`) e pôs
+  o OOM de uma execução anterior como causa principal do estado atual. Pelo critério da 6.1, uma causa errada
+  como principal é Parcial. Na rodada 2, ele identificou `EXITED`, 143/SIGTERM, nenhum OOM e nenhum restart
+  automático, e concluiu que o serviço foi interrompido de fora depois de iniciar, que é a causa real.
+
+**Quando o modelo pediu `since`:** na rodada 1, no `unhealthy` e no `stop` (`"2h"`); os outros três ficaram em
+`CURRENT_RUN`. Os dados da rodada 2 não foram informados.
+
+**Custo:** cerca de US$ 0,006 na rodada 1 (US$ 0,00597, segundo o autor). O da rodada 2 não foi informado.
+
+### Conclusão
+
+O agente diagnosticou corretamente, e de forma consistente, os cenários `unhealthy`, `crash` e `oom`. O `kill`
+continua parcialmente resolvido: o agente identifica SIGKILL, mas não determina a causa operacional específica.
+O `stop` variou entre as rodadas, e a segunda voltou a identificar a parada por SIGTERM.
+
+A medição confirma o que a 6.1 registrou. O padrão `CURRENT_RUN` reduz a contaminação por histórico, mas não
+impede que o modelo peça histórico explicitamente. Quando ele pede, o histórico pode entrar no diagnóstico do
+estado atual (o `stop` da rodada 1). A ferramenta fez o que foi pedido; é um limite de comportamento do agente,
+não um defeito do backend.
+
+**Decisão do autor:** a H2 está encerrada. O produto não muda só para melhorar a medição, porque não há
+evidência suficiente que justifique outra alteração.
+
 ## Ordem até a release
 
 ```
 9c (este PR, com o Tomcat 11.0.26) → CI verde → medição final de H2 → revisão final → tag v0.1.0 (quando o autor mandar)
 ```
+
+Estado em 2026-09-29: a 9c está fechada (CI da `main` verde no run 44, depois da correção 9c-03) e a H2 final
+foi medida. Faltam a revisão final e a tag.
