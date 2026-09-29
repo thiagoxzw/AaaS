@@ -93,7 +93,7 @@ Legenda da coluna **Ref**: RF/RNF = requisito (documento 02), ADR = decisão, Dx
 | TM-B1-06 | I | Erros detalhados vazam detalhes internos | `problem+json` sem stack trace e sem mensagem de exceção interna | D03 §4 | `ApprovalIT.theDecisionAndItsAuditEvent_areAtomic` (o `500` não traz o erro do banco, o SQL nem a pilha; fatia 9a), `ToolExecutorIT.unexpectedException_endsAsInternalError_withoutLeakingItsMessage` |
 | TM-B1-07 | D | Enxurrada de mensagens gera custo e esgota recursos | Uma execução ativa por conversa, limite de execuções ativas por usuário, orçamento diário, limite de tamanho de corpo | RF-26, RNF-CUS-02 | `AgentIT.aSecondMessage_whileAnExecutionIsActive_is409`, `OpenAiAgentIT.anExhaustedDailyBudget_refusesNewMessages` |
 | TM-B1-08 | E | Um endpoint esquecido sem verificação de permissão | Por padrão, todas as rotas são negadas, e cada endpoint declara a permissão exigida. Um teste de matriz percorre endpoints × papéis. | RF-02 | `AuthorizationMatrixIT.everyApiHandler_declaresExactlyThePermissionOfTheSpecification` (todos os handlers de `/api/v1`, lidos do Spring MVC; fatia 9a) e `eachEndpoint_allowsExactlyTheRolesWithItsPermission` |
-| TM-B1-09 | R | Um usuário nega ter pedido uma ação | `EXECUTION_CREATED` é auditado com o usuário, e a mensagem original fica persistida | RF-44 | coberto pelos testes de auditoria |
+| TM-B1-09 | R | Um usuário nega ter pedido uma ação | `AGENT_EXECUTION_REQUESTED` é auditado com o usuário, e a mensagem original fica persistida | RF-44 | `AgentIT.aQuestion_runsTheLoop_andEverythingIsRecorded` (o evento), `RestartContainerIT.anApprovedRestart_restartsOnce_isVerified_andCanBeExplained` (`requestedBy` e a pergunta original na explicação da ação) |
 | — | — | CSRF | **Não se aplica no MVP**: o token vai no header `Authorization`, não em cookie. **Reavaliar na V6** se o dashboard usar cookies. | — | — |
 | — | I | Tráfego sem TLS | Aceito no MVP (localhost). TLS na borda na V7. | §7 | — |
 
@@ -193,7 +193,7 @@ alegação do agente, e o nível `OBSERVE_ONLY` existe para ambientes em que nem
 | TM-B8-03 | T | A aplicação altera ou apaga a auditoria | Um trigger bloqueia `UPDATE`/`DELETE` | D04 §4.11 | `AuditTrailIT.auditEvents_cannotBeUpdatedDeletedOrTruncated_evenWithDirectSql` |
 | TM-B8-04 | T | Um DBA apaga a auditoria | **Residual.** V7: usuários de banco separados para a aplicação e para as migrações. Futuro: encadeamento de hashes. | D04 §4.11 | — |
 | TM-B8-05 | I | O banco (e o Grafana, o Prometheus…) acessível pela rede | No Compose, as portas ficam publicadas **só em `127.0.0.1`**. A senha do Grafana vem do `.env`, nunca o padrão. | RNF-SEG-15 | verificação do Compose no CI |
-| TM-B8-06 | I | Dados sensíveis persistidos (saídas de ferramentas) | Mascaramento antes de persistir e truncagem. A política de retenção vem na V5. A criptografia do disco é responsabilidade da infraestrutura (V7). | RNF-SEG-07b | — |
+| TM-B8-06 | I | Dados sensíveis persistidos (saídas de ferramentas) | Mascaramento antes de persistir e truncagem. A política de retenção vem na V5. A criptografia do disco é responsabilidade da infraestrutura (V7). | RNF-SEG-07b | `SecretCanaryIT`, `RealDockerIT.secretsInTheRealLog_areMaskedBeforeAnythingIsStored` |
 
 ### Transversais
 

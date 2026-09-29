@@ -72,7 +72,7 @@ Fatia 9  Fechamento do MVP (demo, README, H1/H2, release)   ← acrescentada
 | **Fica de fora** | Qualquer endpoint de negócio |
 | **Decisões a tomar** | Versões de Java e Spring Boot (verificadas na documentação atual), a ferramenta de build (seção 7) e a imagem base |
 | **Demonstração** | `docker compose up` → `curl localhost:8080/actuator/health` → `UP`. O Prometheus coleta o backend, e o Grafana abre com o dashboard básico (JVM/HTTP). |
-| **Critérios de aceite** | CI verde num PR. `docker compose up` funciona a partir de um clone limpo, só copiando `.env.example` para `.env`. A imagem roda como não-root (RNF-OPS-03). Nenhuma porta pública fora de `127.0.0.1` (RNF-SEG-15). |
+| **Critérios de aceite** | CI verde num PR. `docker compose up` funciona a partir de um clone limpo, só copiando `.env.example` para `.env`. *Revisto na revisão final (R-01): o `.env.example` deixou de trazer segredos que funcionam, e o compose só sobe depois de preenchê-los ([09c](fatias/09c-release.md#revisão-final)).* A imagem roda como não-root (RNF-OPS-03). Nenhuma porta pública fora de `127.0.0.1` (RNF-SEG-15). |
 | **Testes** | Teste de contexto com PostgreSQL via Testcontainers. O Flyway aplica as migrações. A regra ArchUnit inicial (dependências entre módulos, documento 03 §12). |
 
 ### Fatia 1 — Autenticação + Ambientes + Auditoria
@@ -291,7 +291,12 @@ modelo da 6.1: **3 Sim, 2 Parcial, 0 Não**, na consolidação do autor. `unheal
 duas rodadas. O `kill` ficou Parcial nas duas: identifica SIGKILL, mas não chega ao `docker kill`. O `stop` ficou
 Parcial na rodada 1, quando o modelo pediu histórico e pôs um OOM anterior como causa principal, e Sim na rodada 2.
 O padrão `CURRENT_RUN` reduz a contaminação por histórico, mas não impede o modelo de pedi-lo. A H2 está
-encerrada, sem mudança no produto. Faltam a revisão final e a tag `v0.1.0`.
+encerrada, sem mudança no produto.
+
+**Revisão final** ([achados](fatias/09c-release.md#revisão-final)): um clone limpo, seguindo o README, subiu com os
+segredos públicos do `.env.example`, e o sistema aceitou um JWT assinado com o segredo do exemplo (R-01). Isso
+bloqueou a release. O `.env.example` passou a trazer os segredos vazios, e o CI prova que a cópia sem preencher é
+recusada. Os outros achados eram de documentação (R-02 a R-05). A versão passou a `0.1.0`.
 
 ## 4. Definição de pronto (vale para toda fatia)
 

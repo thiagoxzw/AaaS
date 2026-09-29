@@ -100,7 +100,7 @@ QUEUED ─► RUNNING
 | Isolamento por organização | Tudo com `organization_id` e FKs compostas; consultas com a organização | `onlyTheCreatorSendsMessages_andOtherOrganizationsSeeNothing` (`403` para colega, `404` para outra organização) |
 | Contexto reconstruível | `context_snapshot` (ambiente, serviços por nome lógico, 5 ações recentes, janela da conversa) + `prompt_version` + `llm_model` | `aQuestion_runsTheLoop_andEverythingIsRecorded` |
 | Memória de conversa | Janela das últimas 10 mensagens | `theConversationHistory_isSentBack` |
-| Provedor inexistente | `LLM_PROVIDER=openai` falha na subida | `LlmConfigurationTest` |
+| Provedor inexistente | `LLM_PROVIDER=openai` falha na subida | `LlmConfigurationTest`. *Substituído na fatia 6, quando o `openai` passou a existir: o provedor desconhecido é o `LlmPropertiesTest.anUnknownProvider_stopsTheApplicationAtStartup`, e o `openai` incompleto é o `OpenAiConfigurationTest`.* |
 
 ## Testes
 

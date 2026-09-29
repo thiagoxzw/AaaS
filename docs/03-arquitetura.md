@@ -572,10 +572,13 @@ antes da seguinte:
 | Independência de plataforma | O backend depende **apenas do contrato HTTP do proxy** (URL em configuração). Nenhum caminho de Windows, WSL2 ou Docker Desktop entra no código. Só o `docker-compose` monta o socket, e **apenas no container do proxy**. |
 | Idioma | Documentação, ADRs, requisitos e issues em português. Código, API, banco, enums, logs técnicos, testes e commits em inglês ([CONTRIBUTING](../CONTRIBUTING.md)) |
 
-**Pendente de verificação na implementação** (depende de documentação atual):
+**Pendente de verificação na implementação** (depende de documentação atual). *Tudo resolvido:*
 
-- versões de Java e Spring Boot;
+- ~~versões de Java e Spring Boot~~ *decidido na fatia 0: Java 25 e Spring Boot 4.1.1
+  ([fatia 0](fatias/00-esqueleto.md));*
 - ~~qual API da OpenAI usar e se o adapter usa um SDK, o Spring AI (com a execução automática de
   ferramentas desligada, conforme a ADR-002) ou um cliente HTTP próprio~~ *decidido na fatia 6: cliente HTTP
   próprio sobre a Responses API, sem estado (ADR-010);*
-- a configuração do proxy e o caminho do socket dentro do Docker Desktop com WSL2.
+- ~~a configuração do proxy e o caminho do socket dentro do Docker Desktop com WSL2~~ *verificado pelo autor no
+  Windows (Docker Desktop com WSL2): a validação com o modelo real leu o estado e os logs do `demo-api` pelo
+  proxy ([fatia 6](fatias/06-llm-real.md#validação-com-o-modelo-real)).*

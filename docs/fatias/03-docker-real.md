@@ -57,7 +57,7 @@ O proxy e a allowlist protegem coisas diferentes, e a fatia prova as duas separa
 |---|---|---|
 | O backend não tem acesso ao socket | Só o `docker-socket-proxy` monta `/var/run/docker.sock` (`:ro`) | `scripts/check-compose-docker-socket.sh` no CI; na demonstração, `ls /var/run/docker.sock` falha dentro do backend |
 | Proxy sem porta publicada, numa rede interna | Sem `ports:`; rede `docker-proxy` com `internal: true`, só com o backend | Mesmo script no CI; na demonstração, `curl localhost:2375` falha no host |
-| O proxy recusa tudo além de ler containers e logs | `POST=0`, `ALLOW_RESTARTS=0`, `EVENTS=0`; container read-only, `cap_drop: [ALL]`, `no-new-privileges` | `RealDockerIT.theProxyRefusesEverythingBeyondReadingContainersAndLogs`: `create` privilegiado, `exec`, `start`, `restart`, `kill`, `delete`, `archive`, `export`, `info`, imagens, volumes, redes e eventos → `403` |
+| O proxy recusa tudo além de ler containers e logs | `POST=0`, `ALLOW_RESTARTS=0`, `EVENTS=0`; container read-only, `cap_drop: [ALL]`, `no-new-privileges` | `RealDockerIT.theProxyRefusesEverythingBeyondReadingContainersAndLogs`: `create` privilegiado, `exec`, `start`, `restart`, `kill`, `delete`, `archive`, `export`, `info`, imagens, volumes, redes e eventos → `403`. *Na fatia 8, o restart foi liberado (`ALLOW_RESTARTS=1`), e o teste virou `theProxyRefusesEverythingBeyondReadingContainersAndLogsAndRestarting`.* |
 | O proxy do teste é o do Compose | Mesma imagem com digest e mesmas variáveis | `RealDockerIT.theProxyHereIsTheOneFromCompose` |
 | As ferramentas passam pelo proxy de verdade | O `RealDockerIT` liga o adapter real e aponta a conexão `local` para o proxy | O **log de requisições do próprio proxy** contém as chamadas das ferramentas (`theToolsTalkToTheRealAdapter_throughTheProxy`) |
 | **1. Container fora da allowlist** | `listContainers` pergunta ao runtime só pelos containers da allowlist, por nome exato; `ContainerRef` só nasce do `TargetResolver` | `RealDockerIT.aContainerOutsideTheAllowlist_isNeverListedNorResolvable_andTheProxyNeverSeesARequestForIt`: um container intruso real roda ao lado do alvo. Ele não aparece no `listContainers`; pedir por ele pelo nome lógico, pelo nome real ou pelo ID dá `RESOURCE_NOT_ALLOWED`; e o log do proxy **não tem nenhuma requisição** com o nome ou o ID dele |
@@ -65,7 +65,7 @@ O proxy e a allowlist protegem coisas diferentes, e a fatia prova as duas separa
 | **2. Variáveis de ambiente não saem do adapter** | `DockerInspect` não declara `Config.Env`, `Cmd`, `Mounts` nem `Labels`; o parser pula esses campos | `RealDockerIT.theTargetsEnvironmentVariables_neverReachTheOutputOrTheDatabase` (container real com `DB_PASSWORD`), `DockerEngineContainerRuntimeTest.inspect_mapsOnlyDomainFields…` (resposta gravada com `DB_PASSWORD`) e `theInspectModel_hasNoFieldForEnvironmentCommandOrMounts` |
 | **3. Segredos do log são mascarados** | O executor sanitiza e mascara a saída de qualquer ferramenta antes de gravar (fatia 2) | `RealDockerIT.secretsInTheRealLog_areMaskedBeforeAnythingIsStored`: o container real imprime um JWT e um `password=…`; a coluna `output` no banco só tem `<redacted…>`. Com o fake: `ContainerToolsIT.getContainerLogs_masksSecretsBeforeOutputLeavesExecutor` (inclui um caractere bidi, que vira `<U+202E>`) |
 | O alvo é a entrada da allowlist, nunca o valor cru | O adapter usa o `containerName` cadastrado pelo admin, dentro de uma variável de caminho do `RestClient` | `ContainerToolsIT.theTargetIsTheAllowlistEntry_neverTheRawValue`: o nome real do container, `postgres`, `docker-socket-proxy` → `RESOURCE_NOT_ALLOWED`; `../demo-api`, `demo-api/json`, `demo-api?all=1` → `INVALID_ARGUMENTS` |
-| Restart negado nesta fatia | `ALLOW_RESTARTS=0` | `RealDockerIT.restartIsRefusedByTheProxyInThisSlice…`: o adapter recebe `403` e devolve `FORBIDDEN` |
+| Restart negado nesta fatia | `ALLOW_RESTARTS=0` | `RealDockerIT.restartIsRefusedByTheProxyInThisSlice…`: o adapter recebe `403` e devolve `FORBIDDEN`. *Substituído na fatia 8, que liberou o restart, por `RealDockerIT.restartContainer_restartsARunningAndAStoppedContainer_andVerifiesWhatCameBack`.* |
 | Logs multiplexados e com TTY | `DockerLogDecoder`: frames de 8 bytes separados por stream, com buffer por linha; texto puro com TTY | Respostas gravadas do Docker 29.3.1 (`logs-multiplexed.bin`, `logs-tty.bin`) e `DockerLogDecoderTest` (linha partida entre frames, frame incompleto, linha sem timestamp, corte sem quebrar um par surrogate) |
 | Leituras limitadas | Resposta limitada a 1 MiB; linhas cortadas em 2000 caracteres; `tail` de 1 a 500; `since` de no máximo 24 h | `logs_areCappedInBytes_andLongLinesAreCut`, `getContainerLogs_boundsItsArguments` |
 | Timeouts abaixo dos das ferramentas | Conexão 2 s, leitura 8 s (ferramentas: 10 s e 15 s); sem proxy HTTP e sem seguir redirecionamentos | `slowResponse_endsAsUnavailable_withinTheReadTimeout` (resposta de 3 s com timeout de 300 ms) |
@@ -156,6 +156,10 @@ dispara a partir de uma pergunta, chega na fatia 4.
     `.gitattributes` marca os `.bin` como binários, para o CRLF do log com TTY sobreviver.
 
 ## Pendente de verificação na sua máquina
+
+*Resolvido:* o autor rodou o compose no Windows (Docker Desktop com WSL2), e a validação com o modelo real leu o
+estado e os logs do `demo-api` pelo proxy ([fatia 6](06-llm-real.md#validação-com-o-modelo-real)). O texto
+original fica abaixo.
 
 O Docker Desktop com WSL2: pelo que sei, ele expõe `/var/run/docker.sock` para os containers Linux, e o proxy
 depende disso. Não consigo testar esse ambiente daqui. Se `connectivity-check` responder `reachable: false`,

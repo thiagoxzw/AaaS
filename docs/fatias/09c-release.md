@@ -181,11 +181,35 @@ não um defeito do backend.
 **Decisão do autor:** a H2 está encerrada. O produto não muda só para melhorar a medição, porque não há
 evidência suficiente que justifique outra alteração.
 
+## Revisão final
+
+Feita em 2026-09-29 sobre a `main` em `eaabd15`, com o escopo aprovado pelo autor: um clone limpo seguindo o
+README, a documentação (links, âncoras, status, nomes de testes), a segurança (threat model × testes,
+`.env.example`, padrões de configuração, gitleaks no histórico) e o código (TODO/FIXME, código morto,
+configuração de teste em `main`), sem revisão linha a linha e sem funcionalidade nova. Todos os achados foram
+corrigidos antes da tag, por decisão do autor.
+
+| Achado | Evidência | Classificação | Correção |
+|---|---|---|---|
+| **R-01** O `.env.example` funcionava como senha padrão | Clone limpo, `cp .env.example .env`, compose `healthy`. O login com a senha do exemplo deu `200`, e um JWT assinado fora do sistema com o `JWT_SECRET` do exemplo foi aceito (`GET /me` → `200`; é preciso saber o UUID do usuário). As portas ficam em `127.0.0.1`, mas o README, o `.env.example` e a fatia 0 diziam "não há senha padrão" | **Bloqueava a release** (muda o modelo de segurança) | Os quatro segredos ficam vazios no `.env.example`. O `${VAR:?}` do Compose recusa valor vazio. O job "Compose validation" prova que a cópia sem preencher é recusada e preenche valores descartáveis antes de validar. O README mostra como gerar cada valor |
+| R-02 | O README pedia só Docker com Compose; os scripts exigem bash, `curl` e `jq` | Não bloqueava | Requisitos completos no README |
+| R-03 | Duas seções "Pendente de verificação" (`03-arquitetura.md`, `fatias/03-docker-real.md`) já estavam resolvidas | Não bloqueava | Marcadas como resolvidas, com a referência |
+| R-04 | Documentos de fatias antigas citavam testes substituídos depois (`LlmConfigurationTest`, `RealDockerIT.restartIsRefusedByTheProxyInThisSlice…` e o antigo nome de `theProxyRefusesEverythingBeyondReadingContainersAndLogs…`) | Não bloqueava | Nota em cada um: substituído em qual fatia e por qual teste |
+| R-05 | TM-B1-09 ("coberto pelos testes de auditoria") e TM-B8-06 ("—") não citavam testes; a TM-B1-09 citava um evento (`EXECUTION_CREATED`) que o código não tem | Não bloqueava | As duas linhas citam os testes reais, e a TM-B1-09 usa o evento real, `AGENT_EXECUTION_REQUESTED` |
+
+**Verificado sem achado:** `scripts/demo.sh --yes` completo no clone limpo; 0 links ou âncoras quebrados em 34
+arquivos `.md`; portas só em `127.0.0.1`; nenhum segredo padrão no `application.yml`; gitleaks sem achados nos 67
+commits; nenhum TODO/FIXME; nenhuma classe de produção sem uso; nenhuma configuração só de teste em `main`.
+
+**Limite:** a rede do ambiente da revisão bloqueia o Maven dentro do `docker build`. Por isso, as imagens do
+clone limpo foram montadas com os jars do próprio clone e a mesma etapa final dos Dockerfiles. O `docker build`
+completo é o do CI.
+
 ## Ordem até a release
 
 ```
 9c (este PR, com o Tomcat 11.0.26) → CI verde → medição final de H2 → revisão final → tag v0.1.0 (quando o autor mandar)
 ```
 
-Estado em 2026-09-29: a 9c está fechada (CI da `main` verde no run 44, depois da correção 9c-03) e a H2 final
-foi medida. Faltam a revisão final e a tag.
+Estado em 2026-09-29: a 9c está fechada (CI da `main` verde no run 44, depois da correção 9c-03), a H2 final
+foi medida e a revisão final foi feita, com os achados corrigidos. A versão é a `0.1.0`; falta a tag.
