@@ -29,7 +29,7 @@
         <jacoco.version>0.8.15</jacoco.version>
         <spotbugs-maven-plugin.version>4.10.4.1</spotbugs-maven-plugin.version>
         <findsecbugs.version>1.14.0</findsecbugs.version>
-        <spotbugs-annotations.version>4.10.4</spotbugs-annotations.version>
+        <spotbugs-annotations.version>4.10.5</spotbugs-annotations.version>
         <!-- Not managed by Spring Boot 4.1.1 -->
         <caffeine.version>3.3.0</caffeine.version>
         <!-- Slice 9c (finding 9c-01): Spring Boot 4.1.1 manages 11.0.24, which Trivy reports with three critical
